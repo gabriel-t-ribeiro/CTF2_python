@@ -1,0 +1,6 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.4.0
+    hooks:
+      - id: ruff # Faz análise estática profunda e corrige erros comuns
+      - id: ruff-format # Garante que o código está perfeitamente formatado
