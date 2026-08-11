@@ -46,7 +46,7 @@ def select_roi_interactive(image_path: Path) -> tuple[int, int, int, int]:
     """
     img = cv2.imread(str(image_path))
     if img is None:
-        raise IOError(f"Could not read {image_path}")
+        raise OSError(f"Could not read {image_path}")
     img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
     clicks: list[tuple[float, float]] = []
@@ -109,10 +109,10 @@ def select_roi_interactive(image_path: Path) -> tuple[int, int, int, int]:
         raise ValueError("Need exactly 2 points to define the ROI.")
 
     (x1, y1), (x2, y2) = clicks
-    x = int(round(min(x1, x2)))
-    y = int(round(min(y1, y2)))
-    w = int(round(abs(x2 - x1)))
-    h = int(round(abs(y2 - y1)))
+    x = round(min(x1, x2))
+    y = round(min(y1, y2))
+    w = round(abs(x2 - x1))
+    h = round(abs(y2 - y1))
 
     if w == 0 or h == 0:
         raise ValueError("ROI has zero area.")
