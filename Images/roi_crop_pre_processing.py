@@ -13,6 +13,7 @@
 import argparse
 import sys
 from pathlib import Path
+from typing import Optional
 
 import cv2
 import matplotlib.pyplot as plt
@@ -21,7 +22,7 @@ from matplotlib.patches import Rectangle
 VALID_EXTS = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp"}
 photo_path = Path(
     r"/Users/gabrielribeiro/Library/CloudStorage/GoogleDrive-gribeiro.gr933@gmail.com/O meu "
-    r"disco/Estagio/CTF2_python/Images/images_2/raw_w"
+    r"disco/Estagio/CTF2_python/Images/images_1/raw_1"
 )
 result_path = Path(r"Images/images_2/")
 
@@ -46,8 +47,8 @@ def select_roi_interactive(image_path: Path) -> tuple[int, int, int, int]:
         raise OSError(f"Could not read {image_path}")
     img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-    clicks = []
-    rect_artist = {"patch": None}
+    clicks: list[tuple[float, float]] = []
+    current_patch: list[Optional[Rectangle]] = [None]
     markers = []
 
     fig, ax = plt.subplots(figsize=(12, 8))
@@ -58,17 +59,21 @@ def select_roi_interactive(image_path: Path) -> tuple[int, int, int, int]:
     )
 
     def redraw_rect():
-        if rect_artist["patch"] is not None:
-            rect_artist["patch"].remove()
-            rect_artist["patch"] = None
+        if current_patch[0] is not None:
+            current_patch[0].remove()
+            current_patch[0] = None
+
         if len(clicks) == 2:
-            (x1, y1), (x2, y2) = clicks
+            p1, p2 = clicks[0], clicks[1]
+            x1, y1 = p1[0], p1[1]
+            x2, y2 = p2[0], p2[1]
             x, y = min(x1, x2), min(y1, y2)
             w, h = abs(x2 - x1), abs(y2 - y1)
-            rect_artist["patch"] = Rectangle(
+            rect = Rectangle(
                 (x, y), w, h, linewidth=2, edgecolor="lime", facecolor="none"
             )
-            ax.add_patch(rect_artist["patch"])
+            ax.add_patch(rect)
+            current_patch[0] = rect
         fig.canvas.draw_idle()
 
     def clear_markers():
@@ -81,7 +86,7 @@ def select_roi_interactive(image_path: Path) -> tuple[int, int, int, int]:
         toolbar = getattr(fig.canvas, "toolbar", None)
         if toolbar is not None and getattr(toolbar, "mode", "") != "":
             return
-        if event.inaxes != ax or event.xdata is None:
+        if event.inaxes != ax or event.xdata is None or event.ydata is None:
             return
 
         if event.button == 1:  # left click: add point
@@ -90,7 +95,7 @@ def select_roi_interactive(image_path: Path) -> tuple[int, int, int, int]:
                 clear_markers()
             marker = ax.plot(event.xdata, event.ydata, "r+", markersize=12, mew=2)[0]
             markers.append(marker)
-            clicks.append((event.xdata, event.ydata))
+            clicks.append((float(event.xdata), float(event.ydata)))
             redraw_rect()
         elif event.button == 3:  # right click: undo
             if clicks:
@@ -105,7 +110,10 @@ def select_roi_interactive(image_path: Path) -> tuple[int, int, int, int]:
     if len(clicks) != 2:
         raise ValueError("Need exactly 2 points to define the ROI.")
 
-    (x1, y1), (x2, y2) = clicks
+    p1, p2 = clicks[0], clicks[1]
+    x1, y1 = p1[0], p1[1]
+    x2, y2 = p2[0], p2[1]
+
     x = round(min(x1, x2))
     y = round(min(y1, y2))
     w = round(abs(x2 - x1))
