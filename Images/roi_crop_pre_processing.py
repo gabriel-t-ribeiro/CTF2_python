@@ -23,10 +23,7 @@ photo_path = Path(
     r"/Users/gabrielribeiro/Library/CloudStorage/GoogleDrive-gribeiro.gr933@gmail.com/O meu "
     r"disco/Estagio/CTF2_python/Images/images_2/raw_w"
 )
-result_path = Path(
-    r"/Users/gabrielribeiro/Library/CloudStorage/GoogleDrive-gribeiro.gr933@gmail.com/O meu "
-    r"disco/Estagio/CTF2_python/Images/images_2/"
-)
+result_path = Path(r"Images/images_2/")
 
 
 def list_images(folder: Path) -> list[Path]:
@@ -49,9 +46,9 @@ def select_roi_interactive(image_path: Path) -> tuple[int, int, int, int]:
         raise OSError(f"Could not read {image_path}")
     img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-    clicks: list[tuple[float, float]] = []
+    clicks = []
     rect_artist = {"patch": None}
-    markers: list = []
+    markers = []
 
     fig, ax = plt.subplots(figsize=(12, 8))
     ax.imshow(img_rgb)
@@ -134,14 +131,14 @@ def crop_and_save(
             n_fail += 1
             continue
 
-        H, W = img.shape[:2]
-        if x >= W or y >= H:
+        height, width = img.shape[:2]
+        if x >= width or y >= height:
             print(f"  [skip] ROI outside image bounds for {f.name}")
             n_fail += 1
             continue
 
-        x2 = min(x + w, W)
-        y2 = min(y + h, H)
+        x2 = min(x + w, width)
+        y2 = min(y + h, height)
         cropped = img[max(0, y) : y2, max(0, x) : x2]
 
         if cropped.size == 0:
