@@ -21,11 +21,11 @@ from matplotlib.patches import Rectangle
 VALID_EXTS = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp"}
 photo_path = Path(
     r"/Users/gabrielribeiro/Library/CloudStorage/GoogleDrive-gribeiro.gr933@gmail.com/O meu "
-    r"disco/Estagio/CTF2_python/Images/test_1"
+    r"disco/Estagio/CTF2_python/Images/images_2/raw_w"
 )
 result_path = Path(
     r"/Users/gabrielribeiro/Library/CloudStorage/GoogleDrive-gribeiro.gr933@gmail.com/O meu "
-    r"disco/Estagio/CTF2_python/Images/Results"
+    r"disco/Estagio/CTF2_python/Images/images_2/"
 )
 
 
