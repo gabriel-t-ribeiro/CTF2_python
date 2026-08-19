@@ -17,6 +17,7 @@ pip install opencv-python numpy pillow
 ```Plaintext
 bubble_annotation/
 ├── images_1/                    # Input raw high-speed flow frames
+│   ├── raw_1/                   # Subfolder for uncut images
 │   └── test_image.png
 ├── generated_masks/             # Intermediate binary PNG masks
 │   └── test_image_mask.png
@@ -30,10 +31,12 @@ bubble_annotation/
 
 ### 0. Crop the image
 
-Use `roi_crop_pre_processing.py` to crop the region of interest (ROI) from your raw images. This step is optional
-but recommended to reduce noise and improve detection accuracy.
+🚨 **Choose the directory of photos you want to work with** in every script.
 
-You are just removind unnecessary background and focusing on the area where bubbles are expected to appear.
+Use `roi_crop_pre_processing.py` to crop the region of interest (ROI) from your raw/uncut images.
+**Note:** Raw is not the file format, but simply the original `.png` or `jpg` images.
+
+This removes unnecessary background and focusing on the area where bubbles are expected to appear.
 
 ### **1. Generate Binary Masks** Place your unannotated raw images inside the `images_1/` directory and execute:
 
@@ -56,10 +59,10 @@ This produces`preannotations.json`in the root folder.
 *Code**), use the following XML template:
 
 Important: you should run your `Label Studio` instance inside a docker container since it might need a specific
-version of python and you might not be using it.
+version of python, and you might not be using it.
 
-In this way `Label Studio` will run in a virtual environment and you will not have to worry about dependencies. It
-will also become project agnostic and you can use it elsewhere if you need.
+In this way `Label Studio` will run in a virtual environment, and you will not have to worry about dependencies. It
+will also become project agnostic, and you can use it elsewhere if you need.
 
 ```XML
 
@@ -77,7 +80,7 @@ will also become project agnostic and you can use it elsewhere if you need.
 
 ### **4. Import and Annotate**
 
-1. Navigate to the project dashboard and click**Import**.
+1. Navigate to the project dashboard and click `Import`.
 
 2. Upload`preannotations.json`.
 
@@ -86,4 +89,4 @@ will also become project agnostic and you can use it elsewhere if you need.
 4. Correct the pre-annotations by deleting false positives (`Backspace`), adjusting vertices, or painting fine regions
    using the brush (`1`) and polygon (`2`) tools.
 
-5. Click**Submit**to finalize the ground truth masks.
+5. Click `Submit` to finalize the ground truth masks.
