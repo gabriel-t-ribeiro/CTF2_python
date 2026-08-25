@@ -15,16 +15,19 @@ pip install opencv-python numpy pillow
 ### Project Structure
 
 ```Plaintext
-bubble_annotation/
+Images/                          # uncommited to the repo
 ├── images_1/                    # Input raw high-speed flow frames
 │   ├── raw_1/                   # Subfolder for uncut images
 │   └── test_image.png
 ├── generated_masks/             # Intermediate binary PNG masks
 │   └── test_image_mask.png
+└── preannotations.json          # Final Label Studio import file
+
+images_scripts/
 ├── roi_crop_pre_processing      # Optional ROI crop and pre-processing scripts
 ├── 1_generate_masks.py          # OpenCV mask creation script
-├── 2_create_preannotations.py   # Polygon JSON serialization script
-└── preannotations.json          # Final Label Studio import file
+└── 2_create_preannotations.py   # Polygon JSON serialization script
+
 ```
 
 ## Workflow Steps
