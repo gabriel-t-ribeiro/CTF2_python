@@ -1,16 +1,15 @@
+import argparse
 from pathlib import Path
-
 import albumentations as A
+from albumentations.pytorch import ToTensorV2
 import cv2
 import numpy as np
 import segmentation_models_pytorch as smp
 import torch
 import torch.nn as nn
-from albumentations.pytorch import ToTensorV2
 from torch.utils.data import DataLoader, Dataset
 
 
-# 1. Dataset Definition
 class BubbleDataset(Dataset):
     def __init__(self, image_paths, mask_paths, transform=None):
         self.image_paths = image_paths
@@ -23,7 +22,6 @@ class BubbleDataset(Dataset):
     def __getitem__(self, idx):
         img = cv2.imread(str(self.image_paths[idx]), cv2.IMREAD_GRAYSCALE)
         mask = cv2.imread(str(self.mask_paths[idx]), cv2.IMREAD_GRAYSCALE)
-
         mask = (mask > 127).astype(np.float32)
 
         if self.transform:
@@ -42,7 +40,6 @@ class BubbleDataset(Dataset):
         return img, mask
 
 
-# 2. Combined Loss
 class DiceBCELoss(nn.Module):
     def __init__(self):
         super().__init__()
@@ -59,11 +56,9 @@ class DiceBCELoss(nn.Module):
         return bce_loss + dice_loss
 
 
-def train_model():
-    BASE_DIR = Path(__file__).resolve().parent
-    DATASET_DIR = BASE_DIR / "dataset"
-
-    # Augmentations (resized to multiples of 32 for U-Net pooling)
+def train(
+    dataset_dir: Path, output_model: Path, epochs: int, batch_size: int, lr: float
+):
     train_transform = A.Compose(
         [
             A.Resize(512, 512),
@@ -73,25 +68,24 @@ def train_model():
             ToTensorV2(),
         ]
     )
-
     val_transform = A.Compose([A.Resize(512, 512), ToTensorV2()])
 
-    all_images = sorted(list((DATASET_DIR / "images").glob("*.png")))
-    all_masks = sorted(list((DATASET_DIR / "masks").glob("*.png")))
+    all_images = sorted(list((dataset_dir / "images").glob("*.png")))
+    all_masks = sorted(list((dataset_dir / "masks").glob("*.png")))
 
-    if len(all_images) == 0:
-        raise FileNotFoundError(f"No training pairs found in {DATASET_DIR}")
+    if not all_images or not all_masks:
+        raise FileNotFoundError(f"Images or masks missing inside: {dataset_dir}")
 
     split_idx = int(0.8 * len(all_images))
     train_loader = DataLoader(
         BubbleDataset(all_images[:split_idx], all_masks[:split_idx], train_transform),
-        batch_size=8,
+        batch_size=batch_size,
         shuffle=True,
         num_workers=2,
     )
     val_loader = DataLoader(
         BubbleDataset(all_images[split_idx:], all_masks[split_idx:], val_transform),
-        batch_size=8,
+        batch_size=batch_size,
         shuffle=False,
     )
 
@@ -104,20 +98,18 @@ def train_model():
     )
     print(f"Training on device: {device}")
 
-    # ResNet34 Encoder with pre-trained ImageNet weights
     model = smp.Unet(
         encoder_name="resnet34",
         encoder_weights="imagenet",
         in_channels=1,
         classes=1,
     ).to(device)
-
     criterion = DiceBCELoss()
-    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-4)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
     scaler = torch.cuda.amp.GradScaler(enabled=(device.type == "cuda"))
 
-    epochs = 40
     best_loss = float("inf")
+    output_model.parent.mkdir(parents=True, exist_ok=True)
 
     for epoch in range(1, epochs + 1):
         model.train()
@@ -136,7 +128,6 @@ def train_model():
             scaler.update()
             train_loss += loss.item() * imgs.size(0)
 
-        # Evaluation
         model.eval()
         val_loss = 0.0
         with torch.no_grad():
@@ -156,9 +147,31 @@ def train_model():
 
         if val_loss < best_loss:
             best_loss = val_loss
-            torch.save(model.state_dict(), BASE_DIR / "best_bubble_unet.pth")
-            print("  --> Model checkpoint saved.")
+            torch.save(model.state_dict(), output_model)
+            print(f"  --> Saved best model checkpoint to: {output_model}")
 
 
 if __name__ == "__main__":
-    train_model()
+    parser = argparse.ArgumentParser(description="Train U-Net on bubble dataset")
+    parser.add_argument(
+        "--dataset",
+        "-d",
+        type=Path,
+        default=Path("dataset"),
+        help="Root dataset directory (must contain 'images/' and 'masks/')",
+    )
+    parser.add_argument(
+        "--output-model",
+        "-o",
+        type=Path,
+        default=Path("best_bubble_unet.pth"),
+        help="Path where the best model weights will be saved",
+    )
+    parser.add_argument(
+        "--epochs", "-e", type=int, default=40, help="Number of training epochs"
+    )
+    parser.add_argument("--batch-size", "-b", type=int, default=8, help="Batch size")
+    parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
+    args = parser.parse_args()
+
+    train(args.dataset, args.output_model, args.epochs, args.batch_size, args.lr)

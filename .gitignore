@@ -1,6 +1,47 @@
 # by user 
 /.idea
 
+# Python & Environment
+__pycache__/
+*.py[cod]
+.venv/
+env/
+
+# Datasets & Frame Sequences
+dataset/
+Images/
+segmented_masks/
+generated_masks/
+*.png
+*.jpg
+*.jpeg
+*.tif
+*.tiff
+
+# Model Weights
+*.pth
+*.pt
+*.h5
+*.onnx
+
+# Label Studio Cache & Exports
+project_export.json
+preannotations.json
+
+
+# Tracking & CSV Outputs
+*.csv
+
+# OS metadata
+.DS_Store
+Thumbs.db
+
+
+
+
+
+# === End of user changes ===
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
