@@ -37,15 +37,14 @@ Raw high-speed frames
 │   ├── roi_crop_pre_processing.py    # Optional ROI crop helper
 │   └── README.md                     # Data-prep workflow instructions
 │
-├── model_Training/                    # Deep learning training and analysis scripts
+├── model_training/                    # Deep learning training and analysis scripts
 │   ├── 1_convert_annotations.py      # Convert annotation outputs to training masks
 │   ├── 2_train_u_net.py              # Train the U-Net model
 │   ├── 3_batch_inference.py          # Run segmentation across image folders
 │   ├── 4_reconstruct_void_fraction.py  # Calculate void fraction from masks
-│   ├── 5_track_bubles_kinematcs.py   # Bubble movement and breakup tracking
+│   ├── 5_track_bubbles_kinematics.py   # Bubble movement and breakup tracking
 │   ├── evaluate_unet_metrics.py      # Validation and metric reporting
-│   ├── train_unet.py                 # Alternate training entry point
-│   └── project_export.json           # Project metadata export
+│   └── README.md                     # Model training documentation
 │
 ├── dataset/                           # Local training dataset (not tracked)
 │   ├── images/
@@ -112,8 +111,8 @@ Use the exported or corrected annotations as training ground truth for the model
 ### 3. Convert annotations into training datasets
 
 ```bash
-cd model_Training
-python 1_convert_annotations.py
+cd model_training
+python 1_convert_annotations.py --json ../image_scripts/preannotations.json --dataset ../dataset
 ```
 
 This step prepares the binary image/mask pairs expected by the training pipeline.
@@ -157,7 +156,7 @@ The script estimates the volumetric gas fraction from connected components and c
 ### 7. Track bubble motion and breakup events
 
 ```bash
-python 5_track_bubles_kinematcs.py \
+python 5_track_bubbles_kinematics.py \
   --masks ../images/segmented_masks \
   --output-dir ../results \
   --fps 2000 \

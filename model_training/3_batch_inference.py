@@ -1,5 +1,6 @@
 import argparse
 from pathlib import Path
+
 import cv2
 import numpy as np
 import segmentation_models_pytorch as smp

@@ -1,5 +1,6 @@
 # by user 
 /.idea
+/docs
 
 # Python & Environment
 __pycache__/

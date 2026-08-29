@@ -2,6 +2,7 @@ import argparse
 import base64
 import json
 from pathlib import Path
+
 import cv2
 import numpy as np
 

@@ -1,14 +1,42 @@
 import argparse
 import ssl
 from pathlib import Path
+
 import cv2
 import numpy as np
 import pandas as pd
 import segmentation_models_pytorch as smp
 import torch
 
-# SSL bypass for macOS
+# SSL bypass for macOS pretrained weight downloads if needed
 ssl._create_default_https_context = ssl._create_unverified_context
+
+
+def find_matching_mask(img_path: Path, masks_dir: Path) -> Path:
+    """
+    Finds the corresponding ground-truth mask file for a given image file.
+    Supports identical filename (e.g. frame_0001.png) or stem_mask (e.g. frame_0001_mask.png).
+    """
+    # 1. Check exact filename match
+    candidate = masks_dir / img_path.name
+    if candidate.exists():
+        return candidate
+
+    # 2. Check stem_mask.png match
+    candidate = masks_dir / f"{img_path.stem}_mask.png"
+    if candidate.exists():
+        return candidate
+
+    # 3. Check matching stem with any image extension
+    matches = list(masks_dir.glob(f"{img_path.stem}.*")) + list(
+        masks_dir.glob(f"{img_path.stem}_mask.*")
+    )
+    if matches:
+        return matches[0]
+
+    raise FileNotFoundError(
+        f"Ground-truth mask for '{img_path.name}' not found in '{masks_dir}'"
+    )
 
 
 def evaluate_model(model_path: Path, dataset_dir: Path, output_csv: Path):
@@ -33,24 +61,41 @@ def evaluate_model(model_path: Path, dataset_dir: Path, output_csv: Path):
     model.eval()
 
     # 2. Get Validation Pairs (Using the 20% validation split)
-    all_images = sorted(list((dataset_dir / "images").glob("*.png")))
-    all_masks = sorted(list((dataset_dir / "masks").glob("*.png")))
+    images_dir = dataset_dir / "images"
+    masks_dir = dataset_dir / "masks"
 
-    if not all_images or not all_masks:
-        raise FileNotFoundError(f"Images or masks missing in: {dataset_dir}")
+    all_images = sorted(
+        [
+            p
+            for p in images_dir.iterdir()
+            if p.suffix.lower() in {".png", ".jpg", ".jpeg", ".tif", ".bmp"}
+        ]
+    )
+
+    if not all_images:
+        raise FileNotFoundError(f"No validation images found in: {images_dir}")
 
     split_idx = int(0.8 * len(all_images))
     val_images = all_images[split_idx:]
-    val_masks = all_masks[split_idx:]
 
     print(f"Evaluating on {len(val_images)} validation frame(s)...")
 
     total_tp, total_fp, total_fn, total_tn = 0, 0, 0, 0
 
     with torch.no_grad():
-        for img_p, mask_p in zip(val_images, val_masks):
+        for img_p in val_images:
+            mask_p = find_matching_mask(img_p, masks_dir)
+
             raw_img = cv2.imread(str(img_p), cv2.IMREAD_GRAYSCALE)
             gt_mask = cv2.imread(str(mask_p), cv2.IMREAD_GRAYSCALE)
+
+            if raw_img is None:
+                print(f"[SKIP] Could not read image: {img_p.name}")
+                continue
+            if gt_mask is None:
+                print(f"[SKIP] Could not read mask: {mask_p.name}")
+                continue
+
             orig_h, orig_w = raw_img.shape
 
             # Resize to 512x512 for U-Net forward pass
