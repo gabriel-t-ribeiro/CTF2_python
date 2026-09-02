@@ -3,19 +3,20 @@
 ### Prerequisites
 
 - Python 3.10+
-
 - Required packages:
 
 ```bash
-pip install opencv-python numpy pillow
+pip install opencv-python numpy pillow matplotlib
 ```
 
 - Label Studio running locally or in Docker.
 
-### Project Structure
+---
+
+### Directory Structure
 
 ```plaintext
-Images/                          # uncommitted to the repo
+Images/                          # Uncommitted to the repo
 ├── images_1/                    # Input raw high-speed flow frames
 │   ├── raw_1/                   # Subfolder for uncut images
 │   └── test_image.png
@@ -24,54 +25,165 @@ Images/                          # uncommitted to the repo
 └── preannotations.json          # Final Label Studio import file
 
 image_scripts/
-├── roi_crop_pre_processing.py   # Optional ROI crop and pre-processing script
-├── 1_generate_masks.py          # OpenCV mask creation script
-└── 2_create_preannotations.py   # Polygon JSON serialization script
-
+├── roi_crop_pre_processing.py   # Step 0: Interactive or batch ROI cropper
+├── 0_background_subtraction.py  # Step 0.5: Static background removal & bubble isolation
+├── 1_generate_masks.py          # Step 1: Binary mask generation (Otsu + contours)
+├── 2_create_preannotations.py   # Step 2: Polygon JSON serialization for Label Studio
+├── pre_annotations_for_label_studio.py  # Single-image test & debugging script
+└── README.md
 ```
 
-## Workflow Steps
+---
 
-### 0. Crop the image
+## Workflow & Script Execution Examples
 
-🚨 **Choose the directory of photos you want to work with** in every script.
+### 0. Region of Interest (ROI) Cropping (`roi_crop_pre_processing.py`)
 
-Use `roi_crop_pre_processing.py` to crop the region of interest (ROI) from your raw/uncut images.
-**Note:** Raw is not the file format, but simply the original `.png` or `.jpg` images.
+Crops the active flow boiling area from raw high-speed camera frames to remove boundaries, edges, or irrelevant
+background before processing.
 
-This removes unnecessary background and focuses on the area where bubbles are expected to appear.
+#### Option A: Interactive Selection (GUI)
 
-### 1. Generate Binary Masks
+Opens a Matplotlib viewer where you can zoom/pan (using the toolbar) and left-click two opposite corners of the ROI
+rectangle (right-click to undo). Closing the window starts the batch crop.
 
-Place your unannotated raw images inside the `image_scripts/images_1/` directory and execute:
+```bash
+python roi_crop_pre_processing.py \
+  --input "/path/to/raw_images" \
+  --output "/path/to/cropped_images"
+```
+
+Specifying a specific reference image for selection:
+
+```bash
+# Using a frame index (0-based)
+python roi_crop_pre_processing.py -i ./Images/raw_frames -o ./Images/cropped --ref 0
+
+# Using a specific filename
+python roi_crop_pre_processing.py -i ./Images/raw_frames -o ./Images/cropped --ref frame_00120.png
+```
+
+#### Option B: Non-Interactive / Headless Crop (`--roi x,y,w,h`)
+
+Skip the GUI and directly apply known bounding box coordinates:
+
+```bash
+python roi_crop_pre_processing.py \
+  --input "./Images/raw_frames" \
+  --output "./Images/cropped" \
+  --roi 120,45,600,400
+```
+
+---
+
+### 0.5. Background Subtraction (`0_background_subtraction.py`)
+
+Removes static structures (pipe walls, static bubbles, sensor artifacts) across time while strictly isolating bubbles
+and preserving defocus blur margins.
+
+#### Example 1: Automatic Temporal Median Background (Default)
+
+Computes the static background across the sequence (samples 200 frames across time):
+
+```bash
+python 0_background_subtraction.py \
+  --input "./Images/cropped" \
+  --output "./Images/bg_removed"
+```
+
+#### Example 2: Lingering Vapor Bubbles (Percentile Method)
+
+If large vapor bubbles linger across frames, use percentile aggregation (e.g. 75th-85th percentile):
+
+```bash
+python 0_background_subtraction.py \
+  --input "./Images/cropped" \
+  --output "./Images/bg_removed" \
+  --stat-method percentile \
+  --percentile 80.0 \
+  --threshold 25 \
+  --min-area 30 \
+  --margin 10 \
+  --save-masks
+```
+
+#### Example 3: Using a Dedicated Background Reference Image or Folder
+
+If you have a separate reference image or empty flow sequence:
+
+```bash
+python 0_background_subtraction.py \
+  --input "./Images/cropped" \
+  --output "./Images/bg_removed" \
+  --bg-source "/path/to/static_background.png"
+```
+
+**Key Arguments:**
+
+- `--input` / `-i` *(required)*: Input directory with frames.
+- `--output` / `-o` *(required)*: Output directory for cleaned frames.
+- `--bg-source` / `--bg`: Optional path to dedicated background image file or folder.
+- `--stat-method`: Background estimation method (`median`, `percentile`, `max`, `min`).
+- `--threshold` / `-t`: Intensity difference threshold for bubble detection (default: `20`).
+- `--min-area`: Minimum pixel area to reject sensor noise specks (default: `30`).
+- `--margin` / `-m`: Dilation margin in pixels around bubbles to preserve defocus blur (default: `10`).
+- `--bg-value`: Background fill intensity (default: `255` = white, `0` = black).
+- `--save-masks`: Flag to save envelope masks under `output_dir/bubble_envelopes/`.
+
+---
+
+### 1. Generate Binary Masks (`1_generate_masks.py`)
+
+Generates binary segmentation masks for a batch of images using inverted Otsu dynamic thresholding, contour hole
+filling, and morphological operations.
+
+Place your input images in the folder specified in the script (`image_scripts/images_1/` by default) and run:
 
 ```bash
 python 1_generate_masks.py
 ```
 
-_Adjust `min_area` (lower bound noise filter) and `max_area` (upper bound bulk wave cutoff) inside the script as needed
-for your flow conditions._
+*Outputs binary masks to `image_scripts/generated_masks/` (e.g., `frame_001_mask.png`).*
 
-### 2. Generate Label Studio JSON
+> **Tip:** Open `1_generate_masks.py` to adjust `min_area` and `max_area` inside `segment_bubbles()` if needed to filter
+> tiny noise specks or large bulk waves.
 
-Generate the pre-annotations task file:
+---
+
+### 2. Generate Label Studio JSON (`2_create_preannotations.py`)
+
+Converts the binary masks and images into polygon vector annotations encoded as Label Studio task predictions with
+embedded base64 images.
+
+Ensure `images_1/` and `generated_masks/` are populated, then execute:
 
 ```bash
 python 2_create_preannotations.py
 ```
 
-This produces `preannotations.json` in the `image_scripts` folder.
+*Produces `image_scripts/preannotations.json` ready for Label Studio import.*
 
-### 3. Configure Label Studio Interface
+---
 
-Inside your Label Studio project settings (**Settings** → **Labeling Interface** → **Code**), use the following XML
+### Single-Image Test Script (`pre_annotations_for_label_studio.py`)
+
+Use this script to quickly inspect and tune thresholding and area parameters on a single test frame before running batch
+scripts:
+
+```bash
+python pre_annotations_for_label_studio.py
+```
+
+*Outputs a test mask named `generated_bubble_mask.png` in the current working directory.*
+
+---
+
+## 3. Label Studio Configuration & Workflow
+
+### A. Interface XML Setup
+
+Inside your Label Studio project settings (**Settings** → **Labeling Interface** → **Code**), paste the following XML
 template:
-
-**Important:** You should run your `Label Studio` instance inside a Docker container since it might need a specific
-version of Python, and you might not be using it.
-
-In this way `Label Studio` will run in a virtual environment, and you will not have to worry about dependencies. It will
-also become project agnostic, and you can use it elsewhere if you need.
 
 ```xml
 <View>
@@ -86,15 +198,16 @@ also become project agnostic, and you can use it elsewhere if you need.
 </View>
 ```
 
-### 4. Import and Annotate
+> **Note:** Running Label Studio in a Docker container ensures environment independence and avoids Python dependency
+> conflicts.
 
-1. Navigate to the project dashboard and click `Import`.
+### B. Import and Annotation
 
+1. Navigate to the Label Studio project dashboard and click **Import**.
 2. Upload `preannotations.json`.
-
-3. Open any task: pre-detected bubbles will appear as red vector polygons over the original raw frame.
-
-4. Correct the pre-annotations by deleting false positives (`Backspace`), adjusting vertices, or painting fine regions
-   using the brush (`1`) and polygon (`2`) tools.
-
-5. Click `Submit` to finalize the ground truth masks.
+3. Open any task: pre-detected bubbles will appear as red vector polygons overlaid on the raw frame.
+4. Correct pre-annotations:
+   - Delete false positives (`Backspace` / `Delete`).
+   - Adjust polygon vertices.
+   - Refine tricky regions with brush (`1`) or polygon (`2`) tools.
+5. Click **Submit** to finalize the ground truth annotations.

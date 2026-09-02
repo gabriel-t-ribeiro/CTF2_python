@@ -17,15 +17,15 @@ class BubbleDataset(Dataset):
     Applies data augmentations via Albumentations and ensures 4D batch compatibility (B, C, H, W).
     """
 
-    def __init__(self, image_paths, mask_paths, transform=None):
+    def __init__(self, image_paths: list[Path], mask_paths: list[Path], transform=None):
         self.image_paths = image_paths
         self.mask_paths = mask_paths
         self.transform = transform
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.image_paths)
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
         # 1. Load image and mask in grayscale (H, W)
         img = cv2.imread(str(self.image_paths[idx]), cv2.IMREAD_GRAYSCALE)
         mask = cv2.imread(str(self.mask_paths[idx]), cv2.IMREAD_GRAYSCALE)
@@ -46,12 +46,11 @@ class BubbleDataset(Dataset):
 
         # 3. Convert to torch.Tensor and enforce (1, H, W) channel dimension
         if isinstance(img, np.ndarray):
-            # If no ToTensorV2 was applied, convert from numpy
             img = np.expand_dims(img, axis=0).astype(np.float32) / 255.0
             img = torch.from_numpy(img)
             mask = torch.from_numpy(mask).unsqueeze(0).float()
         else:
-            # ToTensorV2 produces a 2D Tensor (H, W) for grayscale images; add channel axis
+            # Albumentations ToTensorV2 produces a 2D Tensor (H, W) for grayscale images; add channel axis
             if img.ndim == 2:
                 img = img.unsqueeze(0)
             img = img.float() / 255.0
@@ -73,7 +72,7 @@ class DiceBCELoss(nn.Module):
         super().__init__()
         self.bce = nn.BCEWithLogitsLoss()
 
-    def forward(self, logits, targets):
+    def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
         bce_loss = self.bce(logits, targets)
         probs = torch.sigmoid(logits)
         smooth = 1.0
@@ -107,14 +106,21 @@ def train(
 
     # 80/20 train/validation split
     split_idx = int(0.8 * len(all_images))
+    train_dataset = BubbleDataset(
+        all_images[:split_idx], all_masks[:split_idx], train_transform
+    )
+    val_dataset = BubbleDataset(
+        all_images[split_idx:], all_masks[split_idx:], val_transform
+    )
+
     train_loader = DataLoader(
-        BubbleDataset(all_images[:split_idx], all_masks[:split_idx], train_transform),
+        train_dataset,
         batch_size=batch_size,
         shuffle=True,
         num_workers=2,
     )
     val_loader = DataLoader(
-        BubbleDataset(all_images[split_idx:], all_masks[split_idx:], val_transform),
+        val_dataset,
         batch_size=batch_size,
         shuffle=False,
     )
@@ -138,7 +144,13 @@ def train(
 
     criterion = DiceBCELoss()
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
-    scaler = torch.cuda.amp.GradScaler(enabled=(device.type == "cuda"))
+
+    is_cuda = device.type == "cuda"
+    scaler = (
+        torch.amp.GradScaler("cuda", enabled=is_cuda)
+        if hasattr(torch.amp, "GradScaler")
+        else torch.cuda.amp.GradScaler(enabled=is_cuda)
+    )
 
     best_loss = float("inf")
     output_model.parent.mkdir(parents=True, exist_ok=True)
@@ -151,7 +163,7 @@ def train(
             imgs, masks = imgs.to(device), masks.to(device)
             optimizer.zero_grad()
 
-            with torch.cuda.amp.autocast(enabled=(device.type == "cuda")):
+            with torch.amp.autocast(device_type="cuda", enabled=is_cuda):
                 outputs = model(imgs)
                 loss = criterion(outputs, masks)
 
@@ -165,13 +177,13 @@ def train(
         with torch.no_grad():
             for imgs, masks in val_loader:
                 imgs, masks = imgs.to(device), masks.to(device)
-                with torch.cuda.amp.autocast(enabled=(device.type == "cuda")):
+                with torch.amp.autocast(device_type="cuda", enabled=is_cuda):
                     outputs = model(imgs)
                     loss = criterion(outputs, masks)
                 val_loss += loss.item() * imgs.size(0)
 
-        train_loss /= len(train_loader.dataset)
-        val_loss /= len(val_loader.dataset)
+        train_loss /= len(train_dataset)
+        val_loss /= len(val_dataset)
 
         print(
             f"Epoch [{epoch:02d}/{epochs}] - Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f}"
