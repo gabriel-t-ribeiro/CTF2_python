@@ -20,11 +20,9 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 
 VALID_EXTS = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp"}
-photo_path = Path(
-    r"/Users/gabrielribeiro/Library/CloudStorage/GoogleDrive-gribeiro.gr933@gmail.com/O meu "
-    r"disco/Estagio/CTF2_python/Images/images_1/raw_1"
-)
-result_path = Path(r"Images/images_2/")
+base_workspace = Path(__file__).resolve().parents[1]
+photo_path = base_workspace / "images" / "1st_run" / "images_1" / "raw_1"
+result_path = base_workspace / "images" / "1st_run" / "images_2"
 
 
 def list_images(folder: Path) -> list[Path]:
@@ -219,6 +217,12 @@ def main():
             x, y, w, h = (int(v) for v in parts)
         except ValueError:
             print("Error: ROI values must be integers", file=sys.stderr)
+            sys.exit(2)
+        if x < 0 or y < 0:
+            print("Error: ROI x and y must be non-negative", file=sys.stderr)
+            sys.exit(2)
+        if w <= 0 or h <= 0:
+            print("Error: ROI width and height must be positive", file=sys.stderr)
             sys.exit(2)
         roi = (x, y, w, h)
     else:
