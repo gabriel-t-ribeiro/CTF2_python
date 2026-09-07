@@ -17,9 +17,7 @@ def run_inference(input_dir: Path, output_dir: Path, model_weights: Path):
         else "cpu"
     )
 
-    model = smp.Unet(
-        encoder_name="resnet34", encoder_weights=None, in_channels=1, classes=1
-    )
+    model = smp.Unet(encoder_name="resnet34", encoder_weights=None, in_channels=1, classes=1)
     model.load_state_dict(torch.load(model_weights, map_location=device))
     model.to(device)
     model.eval()
@@ -34,28 +32,26 @@ def run_inference(input_dir: Path, output_dir: Path, model_weights: Path):
     if not image_files:
         raise FileNotFoundError(f"No raw images found in {input_dir}")
 
-    print(
-        f"Segmenting {len(image_files)} frames from '{input_dir}' -> '{output_dir}'..."
-    )
+    print(f"Segmenting {len(image_files)} frames from '{input_dir}' -> '{output_dir}'...")
 
     with torch.no_grad():
         for i, img_path in enumerate(image_files, 1):
             raw_img = cv2.imread(str(img_path), cv2.IMREAD_GRAYSCALE)
+            if raw_img is None:
+                print(f"  [skip] Could not read image: {img_path.name}")
+                continue
             orig_h, orig_w = raw_img.shape
 
             resized_img = cv2.resize(raw_img, (512, 512))
             input_tensor = (
-                torch.tensor(resized_img, dtype=torch.float32).unsqueeze(0).unsqueeze(0)
-                / 255.0
+                torch.tensor(resized_img, dtype=torch.float32).unsqueeze(0).unsqueeze(0) / 255.0
             ).to(device)
 
             logits = model(input_tensor)
             probs = torch.sigmoid(logits).squeeze().cpu().numpy()
 
             pred_mask = (probs > 0.5).astype(np.uint8) * 255
-            final_mask = cv2.resize(
-                pred_mask, (orig_w, orig_h), interpolation=cv2.INTER_NEAREST
-            )
+            final_mask = cv2.resize(pred_mask, (orig_w, orig_h), interpolation=cv2.INTER_NEAREST)
 
             out_path = output_dir / f"{img_path.stem}_mask.png"
             cv2.imwrite(str(out_path), final_mask)
@@ -65,9 +61,7 @@ def run_inference(input_dir: Path, output_dir: Path, model_weights: Path):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Batch U-Net segmentation on raw flow frames"
-    )
+    parser = argparse.ArgumentParser(description="Batch U-Net segmentation on raw flow frames")
     parser.add_argument(
         "--input",
         "-i",

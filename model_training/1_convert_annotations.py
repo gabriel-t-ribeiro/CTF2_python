@@ -13,7 +13,7 @@ def convert_annotations_and_extract_images(json_path: Path, dataset_dir: Path):
     img_dir.mkdir(parents=True, exist_ok=True)
     mask_dir.mkdir(parents=True, exist_ok=True)
 
-    with open(json_path, "r", encoding="utf-8") as f:
+    with open(json_path, encoding="utf-8") as f:
         tasks = json.load(f)
 
     count = 0
@@ -45,7 +45,7 @@ def convert_annotations_and_extract_images(json_path: Path, dataset_dir: Path):
             if item.get("type") == "polygonlabels":
                 points = item["value"]["points"]
                 pts_px = np.array(
-                    [[int(pt[0] * w / 100.0), int(pt[1] * h / 100.0)] for pt in points],
+                    [[round(pt[0] * w / 100.0), round(pt[1] * h / 100.0)] for pt in points],
                     dtype=np.int32,
                 )
                 cv2.fillPoly(mask, [pts_px], 255)

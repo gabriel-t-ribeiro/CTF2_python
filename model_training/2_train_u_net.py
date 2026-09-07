@@ -6,8 +6,8 @@ import cv2
 import numpy as np
 import segmentation_models_pytorch as smp
 import torch
-import torch.nn as nn
 from albumentations.pytorch import ToTensorV2
+from torch import nn
 from torch.utils.data import DataLoader, Dataset
 
 
@@ -77,14 +77,17 @@ class DiceBCELoss(nn.Module):
         probs = torch.sigmoid(logits)
         smooth = 1.0
         intersection = (probs * targets).sum()
-        dice_loss = 1.0 - (2.0 * intersection + smooth) / (
-            probs.sum() + targets.sum() + smooth
-        )
+        dice_loss = 1.0 - (2.0 * intersection + smooth) / (probs.sum() + targets.sum() + smooth)
         return bce_loss + dice_loss
 
 
 def train(
-    dataset_dir: Path, output_model: Path, epochs: int, batch_size: int, lr: float
+    dataset_dir: Path,
+    output_model: Path,
+    epochs: int,
+    batch_size: int,
+    lr: float,
+    num_workers: int = 0,
 ):
     train_transform = A.Compose(
         [
@@ -97,32 +100,55 @@ def train(
     )
     val_transform = A.Compose([A.Resize(512, 512), ToTensorV2()])
 
-    # Retrieve and sort dataset pairs
-    all_images = sorted(list((dataset_dir / "images").glob("*.png")))
-    all_masks = sorted(list((dataset_dir / "masks").glob("*.png")))
+    # Retrieve and sort dataset pairs with multi-extension and stem-matching support
+    valid_exts = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp"}
+    img_dir = dataset_dir / "images"
+    mask_dir = dataset_dir / "masks"
+    if not img_dir.exists() or not mask_dir.exists():
+        raise FileNotFoundError(f"Missing 'images' or 'masks' subdirectories inside: {dataset_dir}")
 
-    if not all_images or not all_masks:
-        raise FileNotFoundError(f"Images or masks missing inside: {dataset_dir}")
+    all_images = sorted([p for p in img_dir.iterdir() if p.suffix.lower() in valid_exts])
+    if not all_images:
+        raise FileNotFoundError(f"No valid image files found inside: {img_dir}")
 
-    # 80/20 train/validation split
-    split_idx = int(0.8 * len(all_images))
-    train_dataset = BubbleDataset(
-        all_images[:split_idx], all_masks[:split_idx], train_transform
-    )
-    val_dataset = BubbleDataset(
-        all_images[split_idx:], all_masks[split_idx:], val_transform
-    )
+    all_masks = []
+    for img_p in all_images:
+        cand = mask_dir / img_p.name
+        if not cand.exists():
+            cand = mask_dir / f"{img_p.stem}_mask.png"
+        if not cand.exists():
+            matches = list(mask_dir.glob(f"{img_p.stem}.*")) + list(
+                mask_dir.glob(f"{img_p.stem}_mask.*")
+            )
+            if matches:
+                cand = matches[0]
+        if not cand.exists():
+            raise FileNotFoundError(f"Matching mask for '{img_p.name}' not found in {mask_dir}")
+        all_masks.append(cand)
+
+    # 80/20 train/validation split with safety guardrail against ZeroDivisionError
+    if len(all_images) > 1:
+        split_idx = max(1, min(len(all_images) - 1, int(0.8 * len(all_images))))
+        train_imgs, train_msks = all_images[:split_idx], all_masks[:split_idx]
+        val_imgs, val_msks = all_images[split_idx:], all_masks[split_idx:]
+    else:
+        train_imgs, train_msks = all_images, all_masks
+        val_imgs, val_msks = all_images, all_masks
+
+    train_dataset = BubbleDataset(train_imgs, train_msks, train_transform)
+    val_dataset = BubbleDataset(val_imgs, val_msks, val_transform)
 
     train_loader = DataLoader(
         train_dataset,
         batch_size=batch_size,
         shuffle=True,
-        num_workers=2,
+        num_workers=num_workers,
     )
     val_loader = DataLoader(
         val_dataset,
         batch_size=batch_size,
         shuffle=False,
+        num_workers=num_workers,
     )
 
     device = torch.device(
@@ -211,11 +237,22 @@ if __name__ == "__main__":
         default=Path("best_bubble_unet.pth"),
         help="Path where the best model weights will be saved",
     )
-    parser.add_argument(
-        "--epochs", "-e", type=int, default=40, help="Number of training epochs"
-    )
+    parser.add_argument("--epochs", "-e", type=int, default=40, help="Number of training epochs")
     parser.add_argument("--batch-size", "-b", type=int, default=8, help="Batch size")
     parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
+    parser.add_argument(
+        "--num-workers",
+        type=int,
+        default=0,
+        help="Number of DataLoader worker processes (default: 0 for macOS compatibility)",
+    )
     args = parser.parse_args()
 
-    train(args.dataset, args.output_model, args.epochs, args.batch_size, args.lr)
+    train(
+        args.dataset,
+        args.output_model,
+        args.epochs,
+        args.batch_size,
+        args.lr,
+        num_workers=args.num_workers,
+    )
