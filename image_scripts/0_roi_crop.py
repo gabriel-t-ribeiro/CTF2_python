@@ -13,7 +13,6 @@
 import argparse
 import sys
 from pathlib import Path
-from typing import Optional
 
 import cv2
 import matplotlib.pyplot as plt
@@ -46,7 +45,7 @@ def select_roi_interactive(image_path: Path) -> tuple[int, int, int, int]:
     img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
     clicks: list[tuple[float, float]] = []
-    current_patch: list[Optional[Rectangle]] = [None]
+    current_patch: list[Rectangle | None] = [None]
     markers = []
 
     fig, ax = plt.subplots(figsize=(12, 8))
