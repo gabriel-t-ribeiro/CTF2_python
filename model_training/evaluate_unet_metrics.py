@@ -34,9 +34,7 @@ def find_matching_mask(img_path: Path, masks_dir: Path) -> Path:
     if matches:
         return matches[0]
 
-    raise FileNotFoundError(
-        f"Ground-truth mask for '{img_path.name}' not found in '{masks_dir}'"
-    )
+    raise FileNotFoundError(f"Ground-truth mask for '{img_path.name}' not found in '{masks_dir}'")
 
 
 def evaluate_model(model_path: Path, dataset_dir: Path, output_csv: Path):
@@ -53,9 +51,7 @@ def evaluate_model(model_path: Path, dataset_dir: Path, output_csv: Path):
     if not model_path.exists():
         raise FileNotFoundError(f"Model file not found at: {model_path}")
 
-    model = smp.Unet(
-        encoder_name="resnet34", encoder_weights=None, in_channels=1, classes=1
-    )
+    model = smp.Unet(encoder_name="resnet34", encoder_weights=None, in_channels=1, classes=1)
     model.load_state_dict(torch.load(model_path, map_location=device))
     model.to(device)
     model.eval()
@@ -104,8 +100,7 @@ def evaluate_model(model_path: Path, dataset_dir: Path, output_csv: Path):
             # Resize to 512x512 for U-Net forward pass
             resized_img = cv2.resize(raw_img, (512, 512))
             input_tensor = (
-                torch.tensor(resized_img, dtype=torch.float32).unsqueeze(0).unsqueeze(0)
-                / 255.0
+                torch.tensor(resized_img, dtype=torch.float32).unsqueeze(0).unsqueeze(0) / 255.0
             ).to(device)
 
             logits = model(input_tensor)
@@ -113,9 +108,7 @@ def evaluate_model(model_path: Path, dataset_dir: Path, output_csv: Path):
 
             # Restore original aspect ratio and threshold
             pred_512 = (probs > 0.5).astype(np.uint8)
-            pred_mask = cv2.resize(
-                pred_512, (orig_w, orig_h), interpolation=cv2.INTER_NEAREST
-            )
+            pred_mask = cv2.resize(pred_512, (orig_w, orig_h), interpolation=cv2.INTER_NEAREST)
             gt_binary = (gt_mask > 127).astype(np.uint8)
 
             # Accumulate pixel counts
