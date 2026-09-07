@@ -50,9 +50,9 @@ from model_training.render_3d_flow import (
 )
 
 try:
-    mod_recon = importlib.import_module("model_training.4_void_fraction_reconstruct")
+    mod_recon = importlib.import_module("model_training.4_2d_void_fraction_reconstruct")
 except ModuleNotFoundError:
-    mod_recon = importlib.import_module("model_training.4_reconstruct_void_fraction")
+    mod_recon = importlib.import_module("model_training.4_void_fraction_reconstruct")
 compute_3d_gas_volume = mod_recon.compute_3d_gas_volume
 calculate_rouhani_axelsson_void_fraction = mod_recon.calculate_rouhani_axelsson_void_fraction
 run_reconstruction = mod_recon.run_reconstruction

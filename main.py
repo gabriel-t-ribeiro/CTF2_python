@@ -181,7 +181,7 @@ def main():
     import importlib
 
     if args.command == "void-fraction":
-        mod = importlib.import_module("model_training.4_void_fraction_reconstruct")
+        mod = importlib.import_module("model_training.4_2d_void_fraction_reconstruct")
         mod.run_reconstruction(
             args.masks,
             args.output_csv,
