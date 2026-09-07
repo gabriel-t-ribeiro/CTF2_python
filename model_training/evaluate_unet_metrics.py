@@ -75,8 +75,11 @@ def evaluate_model(model_path: Path, dataset_dir: Path, output_csv: Path):
     if not all_images:
         raise FileNotFoundError(f"No validation images found in: {images_dir}")
 
-    split_idx = int(0.8 * len(all_images))
-    val_images = all_images[split_idx:]
+    if len(all_images) > 1:
+        split_idx = max(1, min(len(all_images) - 1, int(0.8 * len(all_images))))
+        val_images = all_images[split_idx:]
+    else:
+        val_images = all_images
 
     print(f"Evaluating on {len(val_images)} validation frame(s)...")
 

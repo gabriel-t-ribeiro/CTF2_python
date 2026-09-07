@@ -25,11 +25,11 @@ Images/                          # Uncommitted to the repo
 └── preannotations.json          # Final Label Studio import file
 
 image_scripts/
-├── roi_crop_pre_processing.py   # Step 0: Interactive or batch ROI cropper
-├── 0_background_subtraction.py  # Step 0.5: Static background removal & bubble isolation
-├── 1_generate_masks.py          # Step 1: Binary mask generation (Otsu + contours)
-├── 2_create_preannotations.py   # Step 2: Polygon JSON serialization for Label Studio
-├── pre_annotations_for_label_studio.py  # Single-image test & debugging script
+├── 0_roi_crop.py                # Step 0: Interactive or batch ROI cropper
+├── 1_background_subtraction.py  # Step 1: Static background removal & bubble isolation
+├── 2_generate_masks.py          # Step 2: Binary mask generation (Otsu + contours)
+├── 3_create_preannotations.py   # Step 3: Polygon JSON serialization for Label Studio
+├── test_single_mask.py          # Single-frame test & visualizer script (Matplotlib)
 └── README.md
 ```
 
@@ -37,7 +37,7 @@ image_scripts/
 
 ## Workflow & Script Execution Examples
 
-### 0. Region of Interest (ROI) Cropping (`roi_crop_pre_processing.py`)
+### Step 0. Region of Interest (ROI) Cropping (`0_roi_crop.py`)
 
 Crops the active flow boiling area from raw high-speed camera frames to remove boundaries, edges, or irrelevant
 background before processing.
@@ -48,7 +48,7 @@ Opens a Matplotlib viewer where you can zoom/pan (using the toolbar) and left-cl
 rectangle (right-click to undo). Closing the window starts the batch crop.
 
 ```bash
-python roi_crop_pre_processing.py \
+python 0_roi_crop.py \
   --input "/path/to/raw_images" \
   --output "/path/to/cropped_images"
 ```
@@ -57,10 +57,10 @@ Specifying a specific reference image for selection:
 
 ```bash
 # Using a frame index (0-based)
-python roi_crop_pre_processing.py -i ./Images/raw_frames -o ./Images/cropped --ref 0
+python 0_roi_crop.py -i ./Images/raw_frames -o ./Images/cropped --ref 0
 
 # Using a specific filename
-python roi_crop_pre_processing.py -i ./Images/raw_frames -o ./Images/cropped --ref frame_00120.png
+python 0_roi_crop.py -i ./Images/raw_frames -o ./Images/cropped --ref frame_00120.png
 ```
 
 #### Option B: Non-Interactive / Headless Crop (`--roi x,y,w,h`)
@@ -68,7 +68,7 @@ python roi_crop_pre_processing.py -i ./Images/raw_frames -o ./Images/cropped --r
 Skip the GUI and directly apply known bounding box coordinates:
 
 ```bash
-python roi_crop_pre_processing.py \
+python 0_roi_crop.py \
   --input "./Images/raw_frames" \
   --output "./Images/cropped" \
   --roi 120,45,600,400
@@ -76,7 +76,7 @@ python roi_crop_pre_processing.py \
 
 ---
 
-### 0.5. Background Subtraction (`0_background_subtraction.py`)
+### Step 1. Background Subtraction (`1_background_subtraction.py`)
 
 Removes static structures (pipe walls, static bubbles, sensor artifacts) across time while strictly isolating bubbles
 and preserving defocus blur margins.
@@ -86,7 +86,7 @@ and preserving defocus blur margins.
 Computes the static background across the sequence (samples 200 frames across time):
 
 ```bash
-python 0_background_subtraction.py \
+python 1_background_subtraction.py \
   --input "./Images/cropped" \
   --output "./Images/bg_removed"
 ```
@@ -96,7 +96,7 @@ python 0_background_subtraction.py \
 If large vapor bubbles linger across frames, use percentile aggregation (e.g. 75th-85th percentile):
 
 ```bash
-python 0_background_subtraction.py \
+python 1_background_subtraction.py \
   --input "./Images/cropped" \
   --output "./Images/bg_removed" \
   --stat-method percentile \
@@ -112,7 +112,7 @@ python 0_background_subtraction.py \
 If you have a separate reference image or empty flow sequence:
 
 ```bash
-python 0_background_subtraction.py \
+python 1_background_subtraction.py \
   --input "./Images/cropped" \
   --output "./Images/bg_removed" \
   --bg-source "/path/to/static_background.png"
@@ -132,7 +132,7 @@ python 0_background_subtraction.py \
 
 ---
 
-### 1. Generate Binary Masks (`1_generate_masks.py`)
+### Step 2. Generate Binary Masks (`2_generate_masks.py`)
 
 Generates binary segmentation masks for a batch of images using inverted Otsu dynamic thresholding, contour hole
 filling, and morphological operations.
@@ -140,17 +140,17 @@ filling, and morphological operations.
 Place your input images in the folder specified in the script (`image_scripts/images_1/` by default) and run:
 
 ```bash
-python 1_generate_masks.py
+python 2_generate_masks.py
 ```
 
 *Outputs binary masks to `image_scripts/generated_masks/` (e.g., `frame_001_mask.png`).*
 
-> **Tip:** Open `1_generate_masks.py` to adjust `min_area` and `max_area` inside `segment_bubbles()` if needed to filter
-> tiny noise specks or large bulk waves.
+> **Tip:** Pass `--min-area` and `--max-area` CLI options or tune `segment_bubbles()` if needed to filter tiny noise
+> specks or large bulk waves.
 
 ---
 
-### 2. Generate Label Studio JSON (`2_create_preannotations.py`)
+### Step 3. Generate Label Studio JSON (`3_create_preannotations.py`)
 
 Converts the binary masks and images into polygon vector annotations encoded as Label Studio task predictions with
 embedded base64 images.
@@ -158,27 +158,29 @@ embedded base64 images.
 Ensure `images_1/` and `generated_masks/` are populated, then execute:
 
 ```bash
-python 2_create_preannotations.py
+python 3_create_preannotations.py
 ```
 
 *Produces `image_scripts/preannotations.json` ready for Label Studio import.*
 
 ---
 
-### Single-Image Test Script (`pre_annotations_for_label_studio.py`)
+### Tool: Single-Image Test & Visualizer (`test_single_mask.py`)
 
-Use this script to quickly inspect and tune thresholding and area parameters on a single test frame before running batch
-scripts:
+Use this script to visually inspect and tune segmentation parameters (`--min-area`, `--max-area`) on a single frame
+before launching batch jobs:
 
 ```bash
-python pre_annotations_for_label_studio.py
-```
+# View interactive side-by-side plot (Original, Binary Mask, Contour Overlay)
+python test_single_mask.py --image path/to/frame.png
 
-*Outputs a test mask named `generated_bubble_mask.png` in the current working directory.*
+# Save visualization figure and binary mask
+python test_single_mask.py --image path/to/frame.png --output result_plot.png --save-mask mask.png
+```
 
 ---
 
-## 3. Label Studio Configuration & Workflow
+## 4. Label Studio Configuration & Workflow
 
 ### A. Interface XML Setup
 
