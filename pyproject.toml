@@ -1,0 +1,69 @@
+[project]
+name = "ctf2-python"
+version = "0.1.0"
+description = "High-speed bubble tracking, segmentation, and void fraction reconstruction pipeline."
+readme = "README.md"
+requires-python = ">=3.14"
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+indent-width = 4
+
+# Exclude directories containing non-code artifacts, data, or generated masks
+exclude = [
+    ".git",
+    ".idea",
+    ".venv",
+    "__pycache__",
+    "dataset",
+    "images",
+    "extracted_images",
+    "segmented_masks",
+    "generated_masks",
+    "results",
+    "tracking_results",
+    "build",
+    "dist",
+]
+
+[tool.ruff.lint]
+# Selected rule sets:
+# E / W: pycodestyle errors and warnings
+# F: Pyflakes (detects bugs, undefined variables, unused imports)
+# I: isort (organizes and sorts imports automatically)
+# UP: pyupgrade (modernizes syntax for Python 3.14)
+# B: flake8-bugbear (flags subtle runtime bugs and anti-patterns)
+# SIM: flake8-simplify (simplifies conditionals and loops)
+# C4: flake8-comprehensions (optimizes list/dict comprehensions)
+select = [
+    "E",
+    "W",
+    "F",
+    "I",
+    "UP",
+    "B",
+    "SIM",
+    "C4",
+]
+
+ignore = [
+    "E501",   # Line length is enforced by ruff format, not linter
+    "B008",   # Do not perform function call in argument defaults
+    "SIM108", # Use ternary operator instead of if-else (can reduce readability)
+    "B905",   # zip() without an explicit strict= parameter
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Allow module-level sys.path modifications before imports in test suites
+"tests/*" = ["E402"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["image_scripts", "model_training"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+docstring-code-format = true

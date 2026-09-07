@@ -6,23 +6,17 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-def segment_bubbles(
-        img: np.ndarray, min_area: int = 1, max_area: int = 50000
-) -> np.ndarray:
+def segment_bubbles(img: np.ndarray, min_area: int = 1, max_area: int = 50000) -> np.ndarray:
     """Segment bubbles from a single grayscale image using Otsu thresholding and morphological filtering."""
     # 1. Invert so dark bubble borders become bright peaks
     inverted = cv2.bitwise_not(img)
 
     # 2. Dynamic thresholding (Gaussian blur + Otsu)
     blurred = cv2.GaussianBlur(inverted, (5, 5), 0)
-    _, binary_edges = cv2.threshold(
-        blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
-    )
+    _, binary_edges = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
 
     # 3. Fill bubble interiors using contours
-    contours, _ = cv2.findContours(
-        binary_edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-    )
+    contours, _ = cv2.findContours(binary_edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     filled_mask = np.zeros_like(binary_edges)
     cv2.drawContours(filled_mask, contours, -1, 255, thickness=cv2.FILLED)
 
@@ -31,9 +25,7 @@ def segment_bubbles(
     solid_bubbles = cv2.morphologyEx(filled_mask, cv2.MORPH_CLOSE, kernel)
 
     # 5. Filter components by area
-    num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(
-        solid_bubbles, connectivity=8
-    )
+    num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(solid_bubbles, connectivity=8)
 
     clean_mask = np.zeros_like(solid_bubbles)
     for i in range(1, num_labels):
@@ -45,11 +37,11 @@ def segment_bubbles(
 
 
 def visualize_segmentation(
-        img: np.ndarray,
-        mask: np.ndarray,
-        title: str = "Bubble Segmentation Test",
-        save_path: Path | None = None,
-        show: bool = True,
+    img: np.ndarray,
+    mask: np.ndarray,
+    title: str = "Bubble Segmentation Test",
+    save_path: Path | None = None,
+    show: bool = True,
 ):
     """Plot original image, segmented mask, and an overlay side-by-side."""
     # Create RGB overlay
@@ -136,11 +128,7 @@ def main():
         valid_exts = {".png", ".jpg", ".jpeg", ".tif", ".bmp"}
         if images_dir.exists():
             candidates = sorted(
-                [
-                    p
-                    for p in images_dir.iterdir()
-                    if p.is_file() and p.suffix.lower() in valid_exts
-                ]
+                [p for p in images_dir.iterdir() if p.is_file() and p.suffix.lower() in valid_exts]
             )
             if candidates:
                 image_path = candidates[0]
@@ -158,9 +146,7 @@ def main():
 
     mask = segment_bubbles(img, min_area=args.min_area, max_area=args.max_area)
 
-    num_bubbles = len(
-        cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[0]
-    )
+    num_bubbles = len(cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[0])
     print(f"[DONE] Detected {num_bubbles} bubble component(s).")
 
     if args.save_mask:

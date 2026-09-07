@@ -42,8 +42,7 @@ def compute_temporal_median_background(
     # Enforce consistent shape across sample frames to avoid ValueError in np.stack
     ref_shape = frames[0].shape
     frames = [
-        f if f.shape == ref_shape else cv2.resize(f, (ref_shape[1], ref_shape[0]))
-        for f in frames
+        f if f.shape == ref_shape else cv2.resize(f, (ref_shape[1], ref_shape[0])) for f in frames
     ]
 
     # Stack along 3rd dimension and compute median per pixel
@@ -54,7 +53,7 @@ def compute_temporal_median_background(
 
 def load_or_compute_background(
     input_images: list[Path],
-        bg_source: Path | None = None,
+    bg_source: Path | None = None,
     sample_size: int = 50,
 ) -> np.ndarray:
     """
@@ -73,9 +72,7 @@ def load_or_compute_background(
                 raise ValueError(f"Could not load background image file: {bg_source}")
             return bg
         elif bg_source.is_dir():
-            bg_files = sorted(
-                [p for p in bg_source.iterdir() if p.suffix.lower() in valid_exts]
-            )
+            bg_files = sorted([p for p in bg_source.iterdir() if p.suffix.lower() in valid_exts])
             if not bg_files:
                 raise FileNotFoundError(
                     f"No valid background images found in directory: {bg_source}"
@@ -85,9 +82,7 @@ def load_or_compute_background(
             )
             return compute_temporal_median_background(bg_files, sample_size=sample_size)
         else:
-            raise FileNotFoundError(
-                f"Specified background path does not exist: {bg_source}"
-            )
+            raise FileNotFoundError(f"Specified background path does not exist: {bg_source}")
 
     # Fallback to temporal median across video sequence
     print(
@@ -154,7 +149,7 @@ def process_background_subtraction(
 def run_batch_background_removal(
     input_dir: Path,
     output_dir: Path,
-        bg_source: Path | None = None,
+    bg_source: Path | None = None,
     sample_size: int = 50,
     diff_threshold: int = 15,
     margin_px: int = 10,
@@ -162,9 +157,7 @@ def run_batch_background_removal(
 ):
     output_dir.mkdir(parents=True, exist_ok=True)
     valid_exts = {".png", ".jpg", ".jpeg", ".tif", ".bmp"}
-    image_files = sorted(
-        [p for p in input_dir.iterdir() if p.suffix.lower() in valid_exts]
-    )
+    image_files = sorted([p for p in input_dir.iterdir() if p.suffix.lower() in valid_exts])
 
     if not image_files:
         raise FileNotFoundError(f"No image files found in {input_dir}")
@@ -200,9 +193,7 @@ def run_batch_background_removal(
         if i % 100 == 0 or i == len(image_files):
             print(f"  Processed [{i}/{len(image_files)}]")
 
-    print(
-        f"\n[DONE] Background removal complete. Cleaned frames saved to: {output_dir}"
-    )
+    print(f"\n[DONE] Background removal complete. Cleaned frames saved to: {output_dir}")
 
 
 if __name__ == "__main__":

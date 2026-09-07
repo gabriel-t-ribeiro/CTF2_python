@@ -25,9 +25,7 @@ result_path = base_workspace / "images" / "1st_run" / "images_2"
 
 
 def list_images(folder: Path) -> list[Path]:
-    files = sorted(
-        p for p in folder.iterdir() if p.is_file() and p.suffix.lower() in VALID_EXTS
-    )
+    files = sorted(p for p in folder.iterdir() if p.is_file() and p.suffix.lower() in VALID_EXTS)
     if not files:
         raise FileNotFoundError(f"No images found in {folder}")
     return files
@@ -66,9 +64,7 @@ def select_roi_interactive(image_path: Path) -> tuple[int, int, int, int]:
             x2, y2 = p2[0], p2[1]
             x, y = min(x1, x2), min(y1, y2)
             w, h = abs(x2 - x1), abs(y2 - y1)
-            rect = Rectangle(
-                (x, y), w, h, linewidth=2, edgecolor="lime", facecolor="none"
-            )
+            rect = Rectangle((x, y), w, h, linewidth=2, edgecolor="lime", facecolor="none")
             ax.add_patch(rect)
             current_patch[0] = rect
         fig.canvas.draw_idle()
@@ -122,9 +118,7 @@ def select_roi_interactive(image_path: Path) -> tuple[int, int, int, int]:
     return x, y, w, h
 
 
-def crop_and_save(
-    files: list[Path], roi: tuple[int, int, int, int], out_dir: Path
-) -> None:
+def crop_and_save(files: list[Path], roi: tuple[int, int, int, int], out_dir: Path) -> None:
     x, y, w, h = roi
     out_dir.mkdir(parents=True, exist_ok=True)
     n_ok, n_fail = 0, 0
@@ -166,9 +160,7 @@ def crop_and_save(
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="ROI batch cropper for image sequences"
-    )
+    parser = argparse.ArgumentParser(description="ROI batch cropper for image sequences")
     parser.add_argument(
         "--input",
         "-i",

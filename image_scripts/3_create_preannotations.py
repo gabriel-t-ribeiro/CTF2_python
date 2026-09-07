@@ -7,19 +7,13 @@ import cv2
 
 
 def create_preannotations(
-        images_dir: Path,
-        masks_dir: Path,
-        output_json: Path,
+    images_dir: Path,
+    masks_dir: Path,
+    output_json: Path,
 ):
     valid_exts = {".png", ".jpg", ".jpeg", ".tif", ".bmp"}
     image_files = (
-        sorted(
-            [
-                p
-                for p in images_dir.iterdir()
-                if p.is_file() and p.suffix.lower() in valid_exts
-            ]
-        )
+        sorted([p for p in images_dir.iterdir() if p.is_file() and p.suffix.lower() in valid_exts])
         if images_dir.exists()
         else []
     )
@@ -42,9 +36,7 @@ def create_preannotations(
         h, w = mask.shape
 
         # 2. Extract bubble contour polygons from the binary mask
-        contours, _ = cv2.findContours(
-            mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_TC89_KCOS
-        )
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_TC89_KCOS)
 
         results = []
         for i, cnt in enumerate(contours):
