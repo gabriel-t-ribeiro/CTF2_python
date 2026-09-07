@@ -1,6 +1,5 @@
 import argparse
 from pathlib import Path
-from typing import Optional
 
 import cv2
 import numpy as np
@@ -40,6 +39,13 @@ def compute_temporal_median_background(
     if len(frames) == 1:
         return frames[0]
 
+    # Enforce consistent shape across sample frames to avoid ValueError in np.stack
+    ref_shape = frames[0].shape
+    frames = [
+        f if f.shape == ref_shape else cv2.resize(f, (ref_shape[1], ref_shape[0]))
+        for f in frames
+    ]
+
     # Stack along 3rd dimension and compute median per pixel
     stack = np.stack(frames, axis=2)
     bg_median = np.median(stack, axis=2).astype(np.uint8)
@@ -48,7 +54,7 @@ def compute_temporal_median_background(
 
 def load_or_compute_background(
     input_images: list[Path],
-    bg_source: Optional[Path] = None,
+        bg_source: Path | None = None,
     sample_size: int = 50,
 ) -> np.ndarray:
     """
@@ -148,7 +154,7 @@ def process_background_subtraction(
 def run_batch_background_removal(
     input_dir: Path,
     output_dir: Path,
-    bg_source: Optional[Path] = None,
+        bg_source: Path | None = None,
     sample_size: int = 50,
     diff_threshold: int = 15,
     margin_px: int = 10,
