@@ -11,8 +11,10 @@
 #     - --input, --output, --roi, --ref) and proper exit codes. available
 
 import argparse
+import shlex
 import sys
 from pathlib import Path
+from typing import Any
 
 import cv2
 import matplotlib.pyplot as plt
@@ -159,6 +161,313 @@ def crop_and_save(files: list[Path], roi: tuple[int, int, int, int], out_dir: Pa
     print(f"\nDone. Saved: {n_ok}, Failed: {n_fail} -> {out_dir}")
 
 
+def find_calibration_files(target_dir: Path) -> list[Path]:
+    """Find all calibration text files directly within target_dir."""
+    if not target_dir.is_dir():
+        return []
+    return sorted([f for f in target_dir.glob("*calibration*.txt") if f.is_file()])
+
+
+def format_recalled_calibration(cal: dict[str, Any]) -> str:
+    """Format previous calibration values for clear terminal display."""
+    lines = [
+        "\n" + "=" * 58,
+        "           PREVIOUS CALIBRATION DATA RECALLED             ",
+        "=" * 58,
+    ]
+    if "_file_path" in cal:
+        lines.append(f"  Source File   : {cal['_file_path']}")
+    if "diameter_real" in cal and "diameter_unit" in cal:
+        dia_m = cal.get("diameter_m")
+        m_str = f" ({dia_m:.4f} m)" if dia_m is not None else ""
+        lines.append(f"  Diameter      : {cal['diameter_real']} {cal['diameter_unit']}{m_str}")
+    elif "diameter_m" in cal:
+        lines.append(
+            f"  Diameter      : {cal['diameter_m']:.4f} m ({cal['diameter_m'] * 1e3:.2f} mm)"
+        )
+
+    if "pixel_size_mm" in cal:
+        um = cal.get("pixel_size_um")
+        um_str = f" ({um:.2f} um/px)" if um is not None else ""
+        lines.append(f"  Pixel Size    : {cal['pixel_size_mm']:.6f} mm/px{um_str}")
+    elif "pixel_size_m" in cal:
+        lines.append(f"  Pixel Size    : {cal['pixel_size_m']:.6e} m/px")
+
+    if "pixels_per_mm" in cal:
+        lines.append(f"  Optical Scale : {cal['pixels_per_mm']:.4f} px/mm")
+    if "distance_px" in cal:
+        lines.append(f"  Measured Dist : {cal['distance_px']:.2f} px")
+    lines.append("=" * 58)
+    return "\n".join(lines)
+
+
+def parse_custom_calibration_call(
+    call_str: str,
+    output_dir: Path,
+    recalled_cal: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Parse custom CLI arguments entered by the user for recalibration."""
+    from image_scripts.calibrate_pixel_size import build_calibration_parser
+
+    parser = build_calibration_parser()
+    tokens = shlex.split(call_str.strip()) if call_str.strip() else []
+
+    # Strip redundant prefixes if user typed 'python main.py calibrate' or 'calibrate.py'
+    while tokens and (tokens[0] in ("python", "python3", "calibrate") or tokens[0].endswith(".py")):
+        tokens = tokens[1:]
+
+    # If user provided no dimension flags, fall back to recalled dimension
+    has_size = any(t in ("--size-mm", "-smm", "--size", "-s") for t in tokens)
+    if not has_size and recalled_cal:
+        if (
+            "diameter_real" in recalled_cal
+            and str(recalled_cal.get("diameter_unit", "")).lower() == "mm"
+        ):
+            tokens.extend(["--size-mm", str(recalled_cal["diameter_real"])])
+        elif "diameter_m" in recalled_cal:
+            tokens.extend(["--size-mm", f"{float(recalled_cal['diameter_m']) * 1e3:.4f}"])
+
+    try:
+        parsed, unknown = parser.parse_known_args(tokens)
+        if unknown:
+            print(f"[CALIBRATION] Notice: Unrecognized custom flags ignored: {' '.join(unknown)}")
+    except Exception as e:
+        print(f"[CALIBRATION] Argument parsing warning ({e}). Using defaults...")
+        parsed, _ = parser.parse_known_args([])
+
+    return {
+        "input_path": parsed.input or output_dir,
+        "size_mm": parsed.size_mm,
+        "size_m": parsed.size,
+        "ref_arg": parsed.ref,
+        "output_path": parsed.output,
+        "copy_to": parsed.copy_to,
+    }
+
+
+def prompt_calibration_action(
+    cal_files: list[Path],
+    recalled_cal: dict[str, Any] | None = None,
+    output_dir: Path | None = None,
+) -> tuple[str, dict[str, Any]]:
+    """Prompt user to choose what to do with existing calibration file(s)."""
+    print("\n" + "=" * 54)
+    print("           CALIBRATION FILE(S) DETECTED           ")
+    print("=" * 54)
+    print("Existing calibration file(s) found:")
+    for f in cal_files:
+        print(f"  - {f}")
+    print("-" * 54)
+    print("What would you like to do?")
+    print("  [1] Delete calibration (default: data becomes stale after cropping)")
+    print("  [2] Do nothing (keep existing calibration)")
+    print("  [3] Redo calibration (re-calibrate on cropped output)")
+    print("=" * 54)
+
+    while True:
+        try:
+            ans = input("Select option [1/2/3, default: 1 (delete)]: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print("\nDefaulting to [1] Delete calibration.")
+            return "delete", {}
+
+        if ans in ("", "1", "delete", "remove", "d"):
+            return "delete", {}
+        elif ans in ("2", "keep", "do nothing", "do-nothing", "nothing", "k"):
+            return "keep", {}
+        elif ans in ("3", "redo", "recalibrate", "re-calibrate", "r"):
+            default_call = ""
+            if recalled_cal:
+                print(format_recalled_calibration(recalled_cal))
+                if (
+                    "diameter_real" in recalled_cal
+                    and str(recalled_cal.get("diameter_unit", "")).lower() == "mm"
+                ):
+                    default_call = f"--size-mm {recalled_cal['diameter_real']}"
+                elif "diameter_m" in recalled_cal:
+                    default_call = f"--size-mm {float(recalled_cal['diameter_m']) * 1e3:.2f}"
+
+            print("\nEnter how you want to call the calibration for cropped output.")
+            print(
+                "You can specify CLI flags, e.g.: --size-mm 20 --copy-to dataset/masks --output custom.txt"
+            )
+            if default_call:
+                print(f"[Press Enter for default: '{default_call}']")
+            else:
+                print("[Press Enter for default interactive calibration]")
+
+            try:
+                custom_call = input("> ").strip()
+            except (EOFError, KeyboardInterrupt):
+                custom_call = default_call
+
+            if not custom_call and default_call:
+                custom_call = default_call
+
+            target_out = output_dir or Path(".")
+            redo_kwargs = parse_custom_calibration_call(custom_call, target_out, recalled_cal)
+            return "redo", redo_kwargs
+        else:
+            print("Invalid selection. Please enter 1, 2, or 3.")
+
+
+def check_and_handle_calibration(
+    input_dir: Path,
+    output_dir: Path,
+    action: str | None = None,
+    redo_args: str | None = None,
+) -> tuple[str, list[Path], dict[str, Any]]:
+    """
+    Check if calibration file(s) exist in input_dir or output_dir.
+    If found:
+      - Prompt or apply action ('delete', 'keep', 'redo').
+      - Recalls previous calibration parameters if available.
+      - Standard/default is 'delete' since cropping makes prior calibration stale.
+      - If 'delete', unlinks found calibration files immediately.
+    Returns (action, list_of_found_files, redo_kwargs).
+    """
+    cals_in = find_calibration_files(input_dir)
+    cals_out = find_calibration_files(output_dir) if output_dir.exists() else []
+    all_cals = sorted(set(cals_in + cals_out))
+
+    if not all_cals:
+        return "none", [], {}
+
+    # Attempt to parse recalled calibration from found files
+    recalled_cal: dict[str, Any] | None = None
+    from image_scripts.calibrate_pixel_size import find_and_load_calibration, parse_calibration_file
+
+    for f in all_cals:
+        try:
+            recalled_cal = parse_calibration_file(f)
+            recalled_cal["_file_path"] = str(f)
+            break
+        except Exception:
+            pass
+    if recalled_cal is None:
+        recalled_cal = find_and_load_calibration(input_dir)
+
+    redo_kwargs: dict[str, Any] = {}
+
+    if action is None:
+        if sys.stdin.isatty():
+            action, redo_kwargs = prompt_calibration_action(
+                all_cals, recalled_cal=recalled_cal, output_dir=output_dir
+            )
+        else:
+            print(
+                f"[CALIBRATION DETECTED] Found {len(all_cals)} calibration file(s). "
+                "Defaulting to 'delete' (stale after cropping) in non-interactive mode."
+            )
+            action = "delete"
+
+    action = action.lower().strip()
+    if action in ("", "1", "delete", "remove", "d"):
+        normalized = "delete"
+    elif action in ("2", "keep", "do nothing", "do-nothing", "nothing", "k"):
+        normalized = "keep"
+    elif action in ("3", "redo", "recalibrate", "re-calibrate", "r"):
+        normalized = "redo"
+        if not redo_kwargs:
+            redo_kwargs = parse_custom_calibration_call(redo_args or "", output_dir, recalled_cal)
+    else:
+        normalized = "delete"
+
+    if normalized == "delete":
+        for f in all_cals:
+            try:
+                f.unlink()
+                print(f"[CALIBRATION] Deleted stale calibration: {f}")
+            except Exception as e:
+                print(f"[CALIBRATION] Error deleting {f}: {e}", file=sys.stderr)
+    elif normalized == "redo":
+        # Clear outdated calibration in output_dir so new calibration will be clean
+        for f in cals_out:
+            try:
+                f.unlink()
+                print(f"[CALIBRATION] Cleared outdated output calibration: {f.name}")
+            except Exception:
+                pass
+
+    return normalized, all_cals, redo_kwargs
+
+
+def run_crop_pipeline(
+    input_dir: Path,
+    output_dir: Path,
+    roi_arg: str | None = None,
+    ref_arg: str | None = None,
+    on_calibration: str | None = None,
+    redo_args: str | None = None,
+) -> None:
+    """Execute complete crop pipeline with calibration checks and optional recalibration."""
+    input_dir = input_dir.resolve()
+    output_dir = output_dir.resolve()
+
+    files = list_images(input_dir)
+    print(f"Found {len(files)} images in {input_dir}")
+
+    # Check for calibration files and handle according to user preference
+    cal_action, found_cals, redo_kwargs = check_and_handle_calibration(
+        input_dir, output_dir, action=on_calibration, redo_args=redo_args
+    )
+
+    if roi_arg:
+        parts = [p.strip() for p in roi_arg.split(",")]
+        if len(parts) != 4:
+            raise ValueError("--roi expects 4 comma-separated values: x,y,w,h")
+        try:
+            x, y, w, h = (int(v) for v in parts)
+        except ValueError as err:
+            raise ValueError("ROI values must be integers") from err
+        if x < 0 or y < 0:
+            raise ValueError("ROI x and y must be non-negative")
+        if w <= 0 or h <= 0:
+            raise ValueError("ROI width and height must be positive")
+        roi = (x, y, w, h)
+    else:
+        if ref_arg is None:
+            ref = files[0]
+        else:
+            try:
+                idx = int(ref_arg)
+                ref = files[idx]
+            except ValueError:
+                ref_path = Path(ref_arg)
+                if ref_path.is_file():
+                    ref = ref_path
+                else:
+                    matches = [f for f in files if f.name == ref_arg]
+                    if not matches:
+                        raise FileNotFoundError(f"Reference image '{ref_arg}' not found") from None
+                    ref = matches[0]
+        print(f"Selecting ROI on: {ref.name}")
+        roi = select_roi_interactive(ref)
+
+    print(f"Using ROI (x, y, w, h) = {roi}")
+    crop_and_save(files, roi, output_dir)
+
+    if cal_action == "redo":
+        print("\n[CALIBRATION] Launching calibration on newly cropped images...")
+        from image_scripts.calibrate_pixel_size import run_calibration
+
+        target_input = redo_kwargs.get("input_path") or output_dir
+        target_ref = redo_kwargs.get("ref_arg") or ref_arg
+        target_output = redo_kwargs.get("output_path")
+        target_copy = redo_kwargs.get("copy_to")
+        target_size_mm = redo_kwargs.get("size_mm")
+        target_size_m = redo_kwargs.get("size_m")
+
+        run_calibration(
+            input_path=target_input,
+            size_mm=target_size_mm,
+            size_m=target_size_m,
+            ref_arg=target_ref,
+            output_path=target_output,
+            copy_to=target_copy,
+        )
+
+
 def main():
     parser = argparse.ArgumentParser(description="ROI batch cropper for image sequences")
     parser.add_argument(
@@ -181,68 +490,38 @@ def main():
         help="Reference image filename or index (0-based) to select ROI on (default: first image)",
         default=None,
     )
+    parser.add_argument(
+        "--on-calibration",
+        choices=["delete", "keep", "redo", "do-nothing"],
+        default=None,
+        help="Action if calibration files exist: 'delete' (default: stale data), 'keep' (do nothing), or 'redo'",
+    )
+    parser.add_argument(
+        "--redo-args",
+        type=str,
+        default=None,
+        help="CLI arguments for recalibration when --on-calibration redo is selected (e.g. '--size-mm 20 --copy-to dataset/masks')",
+    )
     args = parser.parse_args()
 
-    input_dir = args.input
-    output_dir = args.output
-    roi_arg = args.roi
-    ref_arg = args.ref
-
     try:
-        files = list_images(input_dir)
+        run_crop_pipeline(
+            input_dir=args.input,
+            output_dir=args.output,
+            roi_arg=args.roi,
+            ref_arg=args.ref,
+            on_calibration=args.on_calibration,
+            redo_args=args.redo_args,
+        )
     except FileNotFoundError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(2)
-
-    print(f"Found {len(files)} images in {input_dir}")
-
-    if roi_arg:
-        parts = [p.strip() for p in roi_arg.split(",")]
-        if len(parts) != 4:
-            print(
-                "Error: --roi expects 4 comma-separated values: x,y,w,h",
-                file=sys.stderr,
-            )
-            sys.exit(2)
-        try:
-            x, y, w, h = (int(v) for v in parts)
-        except ValueError:
-            print("Error: ROI values must be integers", file=sys.stderr)
-            sys.exit(2)
-        if x < 0 or y < 0:
-            print("Error: ROI x and y must be non-negative", file=sys.stderr)
-            sys.exit(2)
-        if w <= 0 or h <= 0:
-            print("Error: ROI width and height must be positive", file=sys.stderr)
-            sys.exit(2)
-        roi = (x, y, w, h)
-    else:
-        if ref_arg is None:
-            ref = files[0]
-        else:
-            # try index
-            try:
-                idx = int(ref_arg)
-                ref = files[idx]
-            except ValueError:
-                # treat as filename
-                ref_path = Path(ref_arg)
-                if ref_path.is_file():
-                    ref = ref_path
-                else:
-                    matches = [f for f in files if f.name == ref_arg]
-                    if not matches:
-                        print(
-                            f"Error: reference image {ref_arg} not found",
-                            file=sys.stderr,
-                        )
-                        sys.exit(2)
-                    ref = matches[0]
-        print(f"Selecting ROI on: {ref.name}")
-        roi = select_roi_interactive(ref)
-
-    print(f"Using ROI (x, y, w, h) = {roi}")
-    crop_and_save(files, roi, output_dir)
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(2)
+    except KeyboardInterrupt:
+        print("\nOperation cancelled by user.")
+        sys.exit(130)
 
 
 if __name__ == "__main__":
