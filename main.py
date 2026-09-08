@@ -39,8 +39,8 @@ def main():
     p_vf.add_argument(
         "--pixel-size",
         type=float,
-        default=6.7e-5,
-        help="Pixel size in m/px (SI, default: 6.7e-5)",
+        default=6.1e-5,
+        help="Pixel size in m/px (SI, default: 6.1e-5 = 0.061 mm/px)",
     )
     p_vf.add_argument(
         "--diameter",
@@ -81,8 +81,8 @@ def main():
     p_tr.add_argument(
         "--pixel-size",
         type=float,
-        default=6.7e-5,
-        help="Pixel size in m/px (SI, default: 6.7e-5)",
+        default=6.1e-5,
+        help="Pixel size in m/px (SI, default: 6.1e-5 = 0.061 mm/px)",
     )
     p_tr.add_argument(
         "--max-disp",
@@ -115,8 +115,8 @@ def main():
     p_dfd.add_argument(
         "--pixel-size",
         type=float,
-        default=6.7e-5,
-        help="Pixel size in m/px (SI, default: 6.7e-5)",
+        default=6.1e-5,
+        help="Pixel size in m/px (SI, default: 6.1e-5 = 0.061 mm/px)",
     )
     p_dfd.add_argument(
         "--beta-eff",
@@ -147,8 +147,18 @@ def main():
         default=Path("results/3d_render.html"),
         help="Output interactive HTML path",
     )
-    p_rend.add_argument("--pixel-size", type=float, default=6.7e-5, help="Pixel size in m/px")
-    p_rend.add_argument("--diameter", type=float, default=0.020, help="Pipe diameter in meters")
+    p_rend.add_argument(
+        "--pixel-size",
+        type=float,
+        default=6.1e-5,
+        help="Pixel size in m/px (default: 6.1e-5 = 0.061 mm/px)",
+    )
+    p_rend.add_argument(
+        "--diameter",
+        type=float,
+        default=0.020,
+        help="Pipe diameter in meters (default: 0.020 m = 20 mm)",
+    )
 
     # Subcommand: gen-masks
     p_gm = subparsers.add_parser(

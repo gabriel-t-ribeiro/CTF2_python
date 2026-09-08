@@ -28,8 +28,8 @@ from scipy.ndimage import distance_transform_edt
 
 def reconstruct_3d_bubbles_si(
     mask_2d: np.ndarray,
-    pixel_size_m: float = 6.7e-5,
-    pipe_dia_m: float = 0.012,
+    pixel_size_m: float = 6.1e-5,
+    pipe_dia_m: float = 0.020,
     area_thresh_px: float = 5000.0,
     smoothing_lambda_px: float = 0.05,
 ) -> dict[str, Any]:
@@ -38,8 +38,8 @@ def reconstruct_3d_bubbles_si(
 
     Parameters:
         mask_2d: Binary mask array (H, W) where >0 is gas and 0 is liquid.
-        pixel_size_m: Optical scale in meters/pixel (e.g., 6.7e-5 m/px for 0.067 mm/px).
-        pipe_dia_m: Channel internal diameter in meters (e.g., 0.012 m for 12.0 mm).
+        pixel_size_m: Optical scale in meters/pixel (default: 6.1e-5 m/px = 0.061 mm/px).
+        pipe_dia_m: Channel internal diameter in meters (default: 0.020 m = 20.0 mm).
         area_thresh_px: Threshold area in pixels distinguishing small vs large bubbles (default 5000 px).
         smoothing_lambda_px: Laplacian boundary smoothing factor (default 0.05).
 
@@ -124,6 +124,16 @@ def reconstruct_3d_bubbles_si(
                 r_px = np.sqrt(area_px / np.pi)
                 a_px, b_px = r_px, r_px
                 angle_rad = 0.0
+            else:
+                # Area conservation guardrail (Week 37):
+                # For irregular, concave, or odd-shaped non-convex bubbles, fitEllipse can
+                # severely overestimate the 2D projected area (pi * a * b >> area_px).
+                # We scale a and b to strictly conserve the actual measured 2D bubble area.
+                ellipse_area_px = np.pi * a_px * b_px
+                if ellipse_area_px > 0 and area_px > 0:
+                    area_scale = min(1.0, np.sqrt(area_px / ellipse_area_px))
+                    a_px *= area_scale
+                    b_px *= area_scale
 
             # Convert axes to meters
             a_m = a_px * pixel_size_m
@@ -378,20 +388,113 @@ def render_3d_flow_visualization(
     return output_png_path
 
 
+def extract_slug_mesh_data(
+    blob_mask: np.ndarray,
+    depth_map_m: np.ndarray,
+    pixel_size_m: float,
+    y_center_px: float,
+    step: int = 3,
+) -> dict[str, Any]:
+    """
+    Constructs a watertight 3D surface mesh (vertices and triangle indices)
+    from a 2.5D depth field for Three.js WebGL rendering.
+    Generates top (+Z) and bottom (-Z) surface grids plus connecting boundary skirt walls.
+    """
+    by, bx = np.where(blob_mask)
+    if len(by) == 0:
+        return {"vertices": [], "indices": []}
+
+    y_min, y_max = int(by.min()), int(by.max())
+    x_min, x_max = int(bx.min()), int(bx.max())
+
+    rows = np.arange(y_min, y_max + 1, step)
+    cols = np.arange(x_min, x_max + 1, step)
+    nr, nc = len(rows), len(cols)
+
+    grid_top = np.full((nr, nc), -1, dtype=np.int32)
+    grid_bot = np.full((nr, nc), -1, dtype=np.int32)
+
+    vertices: list[float] = []
+    v_idx = 0
+
+    for r_idx, r in enumerate(rows):
+        for c_idx, c in enumerate(cols):
+            if blob_mask[r, c]:
+                # Mapping to Three.js coordinates:
+                # X: flow axis (meters)
+                # Y: vertical buoyancy axis (meters, centered at tube midplane)
+                # Z: depth axis (meters, perpendicular to viewing plane, centered at 0)
+                x_m = round(float(c * pixel_size_m), 6)
+                y_m = round(float((y_center_px - r) * pixel_size_m), 6)
+                z_depth = round(float(depth_map_m[r, c]), 6)
+
+                # Top vertex (+z_depth)
+                vertices.extend([x_m, y_m, z_depth])
+                grid_top[r_idx, c_idx] = v_idx
+                v_idx += 1
+
+                # Bottom vertex (-z_depth)
+                vertices.extend([x_m, y_m, -z_depth])
+                grid_bot[r_idx, c_idx] = v_idx
+                v_idx += 1
+
+    indices: list[int] = []
+    for r in range(nr - 1):
+        for c in range(nc - 1):
+            t_tl = int(grid_top[r, c])
+            t_tr = int(grid_top[r, c + 1])
+            t_bl = int(grid_top[r + 1, c])
+            t_br = int(grid_top[r + 1, c + 1])
+
+            b_tl = int(grid_bot[r, c])
+            b_tr = int(grid_bot[r, c + 1])
+            b_bl = int(grid_bot[r + 1, c])
+            b_br = int(grid_bot[r + 1, c + 1])
+
+            # Top surface triangles (CCW facing +Z)
+            if t_tl >= 0 and t_tr >= 0 and t_bl >= 0:
+                indices.extend([t_tl, t_bl, t_tr])
+            if t_tr >= 0 and t_bl >= 0 and t_br >= 0:
+                indices.extend([t_tr, t_bl, t_br])
+
+            # Bottom surface triangles (CCW facing -Z)
+            if b_tl >= 0 and b_tr >= 0 and b_bl >= 0:
+                indices.extend([b_tl, b_tr, b_bl])
+            if b_tr >= 0 and b_bl >= 0 and b_br >= 0:
+                indices.extend([b_tr, b_br, b_bl])
+
+            # Boundary skirts / walls closing the top and bottom sheets
+            if t_tl >= 0 and t_tr >= 0 and (r == 0 or grid_top[r - 1, c] < 0):
+                indices.extend([t_tl, t_tr, b_tr, t_tl, b_tr, b_tl])
+            if t_bl >= 0 and t_br >= 0 and (r + 1 == nr - 1 or grid_top[r + 2, c] < 0):
+                indices.extend([t_br, t_bl, b_bl, t_br, b_bl, b_br])
+            if t_tl >= 0 and t_bl >= 0 and (c == 0 or grid_top[r, c - 1] < 0):
+                indices.extend([t_bl, t_tl, b_tl, t_bl, b_tl, b_bl])
+            if t_tr >= 0 and t_br >= 0 and (c + 1 == nc - 1 or grid_top[r, c + 2] < 0):
+                indices.extend([t_tr, t_br, b_br, t_tr, b_br, t_tr])
+
+    return {"vertices": vertices, "indices": indices}
+
+
 def render_interactive_html(recon_data: dict[str, Any], output_html_path: Path) -> Path:
     """
     Generates a standalone, interactive 3D WebGL HTML visualization of the reconstructed tube
-    and bubbles using Three.js via an embedded browser widget.
+    and bubbles (both small ellipsoids and large slugs) using Three.js via an embedded browser widget.
     """
+    import json
+
     output_html_path = Path(output_html_path)
     output_html_path.parent.mkdir(parents=True, exist_ok=True)
 
     R_m = recon_data["pipe_radius_m"]
     L_m = recon_data["pipe_length_m"]
+    pixel_size_m = recon_data["pixel_size_m"]
     alpha_pct = recon_data["void_fraction_alpha"] * 100.0
+    y_center_px = recon_data["mask_shape_px"][0] / 2.0
 
-    # Build lightweight JSON representation of geometry for client-side Three.js
     spheres = []
+    slugs = []
+
     for b in recon_data["bubbles"]:
         if b["regime"] == "small_ellipsoid":
             cx, cy, _ = b["centroid_m"]
@@ -403,16 +506,29 @@ def render_interactive_html(recon_data: dict[str, Any], output_html_path: Path) 
                 {
                     "x": float(cx),
                     "y": float(cz),
-                    "z": float(c),
+                    "z": 0.0,
                     "rx": float(a),
                     "ry": float(b_axis),
                     "rz": float(c),
+                    "rotation_rad": float(b.get("orientation_rad", 0.0)),
                 }
             )
-
-    import json
+        elif b["regime"] == "large_slug":
+            bw_px = b["bbox_px"][2]
+            bh_px = b["bbox_px"][3]
+            step = max(2, int(round(max(bw_px, bh_px) / 100.0)))
+            slug_mesh = extract_slug_mesh_data(
+                b["blob_mask"],
+                b["depth_map_m"],
+                pixel_size_m=pixel_size_m,
+                y_center_px=y_center_px,
+                step=step,
+            )
+            if slug_mesh["vertices"] and slug_mesh["indices"]:
+                slugs.append(slug_mesh)
 
     spheres_json = json.dumps(spheres)
+    slugs_json = json.dumps(slugs)
 
     html_content = f"""<!DOCTYPE html>
 <html>
@@ -420,17 +536,26 @@ def render_interactive_html(recon_data: dict[str, Any], output_html_path: Path) 
     <meta charset="utf-8">
     <title>3D Bubble Reconstruction (SI Units)</title>
     <style>
-        body {{ margin: 0; background-color: #ECECEC; font-family: sans-serif; overflow: hidden; }}
+        body {{ margin: 0; background-color: #ECECEC; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; overflow: hidden; }}
         #header {{
-            position: absolute; top: 10px; width: 100%; text-align: center;
-            pointer-events: none; color: #111;
+            position: absolute; top: 12px; width: 100%; text-align: center;
+            pointer-events: none; color: #111; text-shadow: 0 1px 2px rgba(255,255,255,0.8);
         }}
-        #header h2 {{ margin: 2px; font-size: 18px; }}
-        #header p {{ margin: 2px; font-size: 13px; color: #444; }}
+        #header h2 {{ margin: 2px; font-size: 20px; font-weight: 700; }}
+        #header p {{ margin: 3px; font-size: 14px; color: #333; }}
         #hud {{
-            position: absolute; bottom: 10px; left: 10px; background: rgba(255,255,255,0.85);
-            padding: 10px; border-radius: 6px; font-size: 12px;
+            position: absolute; bottom: 15px; left: 15px; background: rgba(255,255,255,0.92);
+            padding: 12px 16px; border-radius: 8px; font-size: 13px; line-height: 1.5;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15); border: 1px solid #ccc;
         }}
+        #hud b.title {{ font-size: 14px; color: #000088; }}
+        #legend {{
+            position: absolute; top: 15px; right: 15px; background: rgba(255,255,255,0.92);
+            padding: 10px 14px; border-radius: 8px; font-size: 12px; line-height: 1.5;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15); border: 1px solid #ccc;
+        }}
+        .legend-item {{ display: flex; align-items: center; margin-bottom: 4px; }}
+        .color-box {{ width: 14px; height: 14px; margin-right: 8px; border-radius: 3px; }}
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
@@ -440,63 +565,104 @@ def render_interactive_html(recon_data: dict[str, Any], output_html_path: Path) 
         <h2>3D Bubble Reconstruction (SI Units)</h2>
         <p>Gaussian (small) + Laplacian Smoothing (large) | Void Fraction: <b>{alpha_pct:.3f}%</b></p>
     </div>
+    <div id="legend">
+        <div class="legend-item"><div class="color-box" style="background:#000088; opacity:0.7;"></div> Pipe Conduit Wireframe</div>
+        <div class="legend-item"><div class="color-box" style="background:#780000;"></div> 3D Vapor Bubbles / Slugs</div>
+    </div>
     <div id="hud">
-        <b>SI Parameters:</b><br>
-        Pipe Diameter (D): {(R_m * 2) * 1e3:.2f} mm ({(R_m * 2):.5f} m)<br>
-        Pipe Length (L): {L_m * 1e3:.2f} mm ({L_m:.5f} m)<br>
-        Total Gas Volume: {recon_data["gas_volume_m3"]:.3e} m³<br>
-        Total Pipe Volume: {recon_data["pipe_volume_m3"]:.3e} m³<br>
-        Controls: Left-click + Drag to rotate | Scroll to zoom
+        <b class="title">SI Flow Parameters</b><br>
+        Pixel scale (s_px): {pixel_size_m * 1e3:.3f} mm/px ({pixel_size_m:.4e} m/px)<br>
+        Channel Diameter (D): {(R_m * 2) * 1e3:.2f} mm ({(R_m * 2):.5f} m)<br>
+        Channel Length (L): {L_m * 1e3:.2f} mm ({L_m:.5f} m)<br>
+        Total Gas Volume: {recon_data["gas_volume_m3"]:.3e} m³ ({recon_data["gas_volume_m3"] * 1e9:.2f} mm³)<br>
+        Total Pipe Volume: {recon_data["pipe_volume_m3"]:.3e} m³ ({recon_data["pipe_volume_m3"] * 1e9:.2f} mm³)<br>
+        Void Fraction (α): <b>{alpha_pct:.3f}%</b> ({recon_data["void_fraction_alpha"]:.4f})<br>
+        Structures: {len(spheres)} small ellipsoids, {len(slugs)} large slugs<br>
+        <small style="color:#555;">Rotate: Left-Click + Drag | Pan: Right-Click + Drag | Zoom: Scroll</small>
     </div>
     <script>
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0xECECEC);
-        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.001, 10);
-        camera.position.set({L_m * 0.5}, {R_m * 3}, {R_m * 4});
+        const camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.0005, 10);
+        camera.position.set({L_m * 0.5}, {R_m * 1.6}, {R_m * 3.4});
 
-        const renderer = new THREE.WebGLRenderer({{ antialias: true }});
+        const renderer = new THREE.WebGLRenderer({{ antialias: true, alpha: true }});
+        renderer.setPixelRatio(window.devicePixelRatio);
         renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.05;
         document.body.appendChild(renderer.domElement);
 
         const controls = new THREE.OrbitControls(camera, renderer.domElement);
         controls.target.set({L_m * 0.5}, 0, 0);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.08;
         controls.update();
 
-        // Lighting
-        scene.add(new THREE.AmbientLight(0xffffff, 0.7));
-        const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-        dirLight.position.set(1, 2, 1).normalize();
-        scene.add(dirLight);
+        // 3D Illumination
+        scene.add(new THREE.AmbientLight(0xffffff, 0.75));
 
-        // Cylindrical pipe wireframe
-        const cylGeom = new THREE.CylinderGeometry({R_m}, {R_m}, {L_m}, 40, 25, true);
+        const dirLight1 = new THREE.DirectionalLight(0xffffff, 0.75);
+        dirLight1.position.set(1, 2, 2).normalize();
+        scene.add(dirLight1);
+
+        const dirLight2 = new THREE.DirectionalLight(0xffffff, 0.45);
+        dirLight2.position.set(-1, -1, -2).normalize();
+        scene.add(dirLight2);
+
+        const dirLight3 = new THREE.DirectionalLight(0xffffff, 0.3);
+        dirLight3.position.set(0, 3, 0).normalize();
+        scene.add(dirLight3);
+
+        // Cylindrical pipe wireframe (Navy Blue)
+        const cylGeom = new THREE.CylinderGeometry({R_m}, {R_m}, {L_m}, 64, 40, true);
         cylGeom.rotateZ(Math.PI / 2);
         cylGeom.translate({L_m / 2}, 0, 0);
         const wireframe = new THREE.WireframeGeometry(cylGeom);
         const line = new THREE.LineSegments(wireframe);
         line.material.color.setHex(0x000088);
-        line.material.opacity = 0.6;
+        line.material.opacity = 0.55;
         line.material.transparent = true;
         scene.add(line);
 
-        // Render small ellipsoids
-        const spheres = {spheres_json};
+        // Material for all bubbles (Deep maroon with Gouraud/Phong specular reflection)
         const bubbleMat = new THREE.MeshPhongMaterial({{
-            color: 0x800000,
-            shininess: 80,
-            specular: 0x442222
+            color: 0x780000,
+            emissive: 0x180000,
+            specular: 0x663333,
+            shininess: 75,
+            side: THREE.DoubleSide
         }});
 
+        // 1. Render Large Slugs (3D Watertight Meshes)
+        const slugs = {slugs_json};
+        slugs.forEach(slug => {{
+            if (slug.vertices && slug.vertices.length > 0 && slug.indices && slug.indices.length > 0) {{
+                const geom = new THREE.BufferGeometry();
+                geom.setAttribute('position', new THREE.BufferAttribute(new Float32Array(slug.vertices), 3));
+                geom.setIndex(slug.indices);
+                geom.computeVertexNormals();
+                const mesh = new THREE.Mesh(geom, bubbleMat);
+                scene.add(mesh);
+            }}
+        }});
+
+        // 2. Render Small Bubbles (Ellipsoids)
+        const spheres = {spheres_json};
         spheres.forEach(s => {{
-            const geom = new THREE.SphereGeometry(1, 16, 12);
+            const geom = new THREE.SphereGeometry(1, 20, 16);
             geom.scale(s.rx, s.ry, s.rz);
             const mesh = new THREE.Mesh(geom, bubbleMat);
             mesh.position.set(s.x, s.y, s.z);
+            if (s.rotation_rad) {{
+                mesh.rotation.z = s.rotation_rad;
+            }}
             scene.add(mesh);
         }});
 
         function animate() {{
             requestAnimationFrame(animate);
+            controls.update();
             renderer.render(scene, camera);
         }}
         animate();
@@ -538,13 +704,13 @@ def main():
         "--pixel-size",
         type=float,
         default=None,
-        help="Optical pixel scale in meters/pixel (SI unit, e.g. 8.6e-5)",
+        help="Optical pixel scale in meters/pixel (SI unit, e.g. 6.1e-5)",
     )
     parser.add_argument(
         "--pixel-size-mm",
         type=float,
-        default=0.086,
-        help="Optical pixel scale in mm/pixel (convenience, default 0.086 mm)",
+        default=0.061,
+        help="Optical pixel scale in mm/pixel (convenience, default 0.061 mm)",
     )
     parser.add_argument(
         "--diameter",

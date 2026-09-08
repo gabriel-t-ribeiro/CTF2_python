@@ -145,6 +145,16 @@ def compute_3d_gas_volume(
             if not fitted:
                 r = np.sqrt(area / np.pi)
                 a, b = r, r
+            else:
+                # Area conservation guardrail (Week 37):
+                # For irregular, concave, or odd-shaped non-convex bubbles, fitEllipse can
+                # severely overestimate the 2D projected area (pi * a * b >> area).
+                # We scale a and b to strictly conserve the actual measured 2D bubble area.
+                ellipse_area = np.pi * a * b
+                if ellipse_area > 0 and area > 0:
+                    scale = min(1.0, np.sqrt(area / ellipse_area))
+                    a *= scale
+                    b *= scale
 
             # Constrain out-of-plane depth semi-axis c by local cylindrical chord depth
             c = min(b, z_local_max)

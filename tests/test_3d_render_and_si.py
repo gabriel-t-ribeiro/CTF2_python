@@ -158,15 +158,16 @@ def test_rouhani_axelsson_drift_flux_water_si():
 
 
 def test_3d_render_generation():
-    """Verify that the 3D rendering pipeline outputs a valid, non-empty PNG image and HTML."""
+    """Verify that the 3D rendering pipeline outputs a valid, non-empty PNG image and HTML with large slugs."""
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
         h, w = 200, 400
         mask = np.zeros((h, w), dtype=np.uint8)
         cv2.circle(mask, (100, 100), 15, 255, -1)
+        # 150 x 60 = 9000 px -> Large slug (> 5000 px)
         cv2.rectangle(mask, (200, 70), (350, 130), 255, -1)
 
-        s_px = 8.6e-5
+        s_px = 6.1e-5
         D_m = 0.020
         recon = reconstruct_3d_bubbles_si(mask, pixel_size_m=s_px, pipe_dia_m=D_m)
 
@@ -180,6 +181,36 @@ def test_3d_render_generation():
         rendered_html = render_interactive_html(recon, out_html)
         assert rendered_html.exists()
         assert rendered_html.stat().st_size > 500
+
+        # Verify that both small ellipsoids AND large slugs are rendered in Three.js HTML
+        html_text = out_html.read_text(encoding="utf-8")
+        assert "slugs.forEach" in html_text
+        assert "spheres.forEach" in html_text
+        assert '"vertices":' in html_text
+        assert '"indices":' in html_text
+
+
+def test_odd_shaped_bubble_area_conservation():
+    """Verify that irregular non-convex bubbles do not become oversized by fitEllipse."""
+    h, w = 150, 150
+    mask = np.zeros((h, w), dtype=np.uint8)
+    # Create an L-shaped / concave bubble
+    mask[50:100, 50:60] = 255
+    mask[90:100, 50:110] = 255
+    actual_area_px = float((mask > 0).sum())
+
+    recon = reconstruct_3d_bubbles_si(mask, pixel_size_m=6.1e-5, pipe_dia_m=0.020)
+    assert recon["bubble_count"] == 1
+    b = recon["bubbles"][0]
+    assert b["regime"] == "small_ellipsoid"
+    a_m, b_m, _ = b["semi_axes_m"]
+    a_px = a_m / 6.1e-5
+    b_px = b_m / 6.1e-5
+    projected_area_px = math.pi * a_px * b_px
+    # Projected area must not exceed actual area by more than 1%
+    assert projected_area_px <= actual_area_px * 1.01, (
+        f"Oversized: {projected_area_px} vs {actual_area_px}"
+    )
 
 
 def test_kinematic_tracking_optimal_bipartite_matching():
@@ -248,8 +279,10 @@ if __name__ == "__main__":
     print("  [PASS] test_rouhani_axelsson_drift_flux_water_si")
     test_3d_render_generation()
     print("  [PASS] test_3d_render_generation")
+    test_odd_shaped_bubble_area_conservation()
+    print("  [PASS] test_odd_shaped_bubble_area_conservation")
     test_kinematic_tracking_optimal_bipartite_matching()
     print("  [PASS] test_kinematic_tracking_optimal_bipartite_matching")
     test_depth_from_defocus_inversion()
     print("  [PASS] test_depth_from_defocus_inversion")
-    print("\nALL 7 TESTS PASSED SUCCESSFULLY!")
+    print("\nALL 8 TESTS PASSED SUCCESSFULLY!")

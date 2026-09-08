@@ -1,6 +1,7 @@
 # User / IDE settings
 /.idea/
 /docs/
+/matlab_image_processing_final/
 .DS_Store
 Thumbs.db
 
