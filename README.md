@@ -4,20 +4,34 @@
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
 [![Units: SI](https://img.shields.io/badge/units-standard%20SI-success.svg)](#8-engineering-standards--si-unit-conventions)
 
-An automated computer-vision and quantitative physics pipeline for high-speed imaging of two-phase subcooled flow boiling in conduits. Designed for mechanical and chemical engineers, the pipeline translates high-framerate shadowgraphy footage (typically 2000 Hz) into volumetric void fraction ($\alpha$), bubble velocity fields ($\vec{v}$), hydrodynamic breakup rates, and 3D spatial bubble distributions $(x, y, z)$ using single-camera Depth from Defocus (DFD).
+An automated computer-vision and quantitative physics pipeline for high-speed imaging of two-phase subcooled flow
+boiling in conduits. Designed for mechanical and chemical engineers, the pipeline translates high-framerate shadowgraphy
+footage (typically 2000 fps) into volumetric void fraction ($\alpha$), bubble velocity fields ($\vec{v}$), hydrodynamic
+breakup rates, and 3D spatial bubble distributions $(x, y, z)$ using single-camera Depth from Defocus (DFD).
 
 ---
 
 ## 1. Physical Context & Engineering Motivation
 
-Accurate void fraction ($\alpha$) and interfacial area concentration are foundational parameters in thermal-hydraulic modeling of nuclear reactor cooling channels, compact heat exchangers, and boiling refrigeration loops. In subcooled flow boiling, vapor bubble dynamics govern wall heat transfer, departure from nucleate boiling (DNB), and flow regime transitions (bubbly $\to$ slug $\to$ annular).
+Accurate void fraction ($\alpha$) and interfacial area concentration are foundational parameters in thermal-hydraulic
+modeling of nuclear reactor cooling channels, compact heat exchangers, and boiling refrigeration loops. In subcooled
+flow boiling, vapor bubble dynamics govern wall heat transfer, departure from nucleate boiling (DNB), and flow regime
+transitions (bubbly $\to$ slug $\to$ annular).
 
 This repository addresses key experimental optical challenges in high-speed flow boiling:
-1. **Optical Refraction & Internal Glare**: Bubbles act as divergent spherical lenses, producing dark shadow boundaries around bright internal glare cores. The pipeline prevents threshold-induced core erosion.
-2. **Defocus Blur**: Bubbles displaced from the focal plane exhibit blurred interfaces. Rather than discarding out-of-focus bubbles, this pipeline uses Depth from Defocus (DFD) to quantify bubble depth ($z$) and in-focus diameter ($d_0$).
-3. **Dual-Regime 3D Volume Reconstruction**: Small spherical/ellipsoidal bubbles are reconstructed as triaxial ellipsoids bounded by channel walls; large vapor slugs are reconstructed using distance-transform-based Laplacian extrusion constrained by the channel chord depth (Eduardo Reis, 2025).
-4. **Hydrodynamic Breakup Decoupling**: High-framerate tracking at 2000 FPS decouples stable steady translation from turbulent shear breakup via optimal bipartite assignment and projected area conservation.
-5. **Analytical Validation**: Experimental void fraction is directly validated against the Rouhani & Axelsson (1970) drift-flux theoretical correlation for boiling water.
+
+1. **Optical Refraction & Internal Glare**: Bubbles act as divergent spherical lenses, producing dark shadow boundaries
+   around bright internal glare cores. The pipeline prevents threshold-induced core erosion.
+2. **Defocus Blur**: Bubbles displaced from the focal plane exhibit blurred interfaces. Rather than discarding
+   out-of-focus bubbles, this pipeline uses Depth from Defocus (DFD) to quantify bubble depth ($z$) and in-focus
+   diameter ($d_0$).
+3. **Dual-Regime 3D Volume Reconstruction**: Small spherical/ellipsoidal bubbles are reconstructed as triaxial
+   ellipsoids bounded by channel walls; large vapor slugs are reconstructed using distance-transform-based Laplacian
+   extrusion constrained by the channel chord depth (Eduardo Reis, 2025).
+4. **Hydrodynamic Breakup Decoupling**: High-framerate tracking at 2000 FPS decouples stable steady translation from
+   turbulent shear breakup via optimal bipartite assignment and projected area conservation.
+5. **Analytical Validation**: Experimental void fraction is directly validated against the Rouhani & Axelsson (1970)
+   drift-flux theoretical correlation for boiling water.
 
 ---
 
@@ -51,7 +65,8 @@ Raw High-Speed Shadowgraphy (2000 FPS)
 
 ## 3. Environment Setup & Prerequisites
 
-The codebase is built for Python 3.14+ and leverages PyTorch with hardware acceleration (`mps` on macOS Apple Silicon, `cuda` on Linux/NVIDIA, or `cpu`).
+The codebase is built for Python 3.14+ and leverages PyTorch with hardware acceleration (`mps` on macOS Apple Silicon,
+`cuda` on Linux/NVIDIA, or `cpu`).
 
 ### 3.1 Activate the Virtual Environment
 
@@ -67,6 +82,7 @@ python --version
 ```
 
 Expected terminal output:
+
 ```text
 Python 3.14.0
 ```
@@ -84,13 +100,15 @@ pip install opencv-python numpy pandas scipy matplotlib pillow albumentations se
 
 ## 4. Verification & Automated Test Suite
 
-Run the comprehensive unit test suite to verify physical units, dimensional consistency, mathematical model bounds, and optical inversion routines:
+Run the comprehensive unit test suite to verify physical units, dimensional consistency, mathematical model bounds, and
+optical inversion routines:
 
 ```bash
 python tests/test_3d_render_and_si.py
 ```
 
 Expected terminal output:
+
 ```text
 Running comprehensive CTF2 verification tests...
   [PASS] test_si_unit_scales_and_dimensions
@@ -133,17 +151,18 @@ python main.py --help
 ```
 
 ```text
-usage: main.py [-h] {void-fraction,track,dfd,render,gen-masks,bg-sub} ...
+usage: main.py [-h] {void-fraction,track,dfd,render,calibrate,gen-masks,bg-sub} ...
 
 CTF2 Flow Boiling Analysis & 3D Reconstruction Pipeline
 
 positional arguments:
-  {void-fraction,track,dfd,render,gen-masks,bg-sub}
+  {void-fraction,track,dfd,render,calibrate,gen-masks,bg-sub}
                         Available pipeline stages
     void-fraction       Compute 3D gas volumes and void fraction
     track               Track bubble kinematics and breakup events at 2000 FPS
     dfd                 Perform single-camera Depth from Defocus (DFD) analysis
     render              Render 3D flow structure and interactive HTML
+    calibrate           Interactively calibrate optical pixel size (m/px) using 2 points
     gen-masks           Generate initial binary masks using Otsu thresholding
     bg-sub              Perform background subtraction preserving defocus margins
 ```
@@ -152,7 +171,8 @@ positional arguments:
 
 ### 5.2 Execute Void Fraction Reconstruction & Benchmark
 
-Calculates frame-by-frame 3D gas volumes, experimental void fraction $\alpha_{\text{exp}}$, and compares against the Rouhani-Axelsson model:
+Calculates frame-by-frame 3D gas volumes, experimental void fraction $\alpha_{\text{exp}}$, and compares against the
+Rouhani-Axelsson model:
 
 ```bash
 python main.py void-fraction \
@@ -165,6 +185,7 @@ python main.py void-fraction \
 ```
 
 Expected terminal output:
+
 ```text
 Executing 3D void fraction reconstruction in standard SI units:
   Masks count         : 11
@@ -209,6 +230,7 @@ python main.py track \
 ```
 
 Expected terminal output:
+
 ```text
 Tracking bubble kinematics at 2000.0 FPS across 11 frames in SI units...
   Temporal resolution (dt)  : 5.000000e-04 s (0.500 ms)
@@ -243,6 +265,7 @@ python main.py dfd \
 ```
 
 Expected terminal output:
+
 ```text
 Executing Depth from Defocus (DFD) analysis across 11 frames:
   Pixel size (SI)     : 8.600000e-05 m/px
@@ -276,9 +299,79 @@ python main.py render \
 ```
 
 Expected terminal output:
+
 ```text
 [DONE] Rendered 3D flow to results/3d_render.png and results/3d_render.html
 ```
+
+---
+
+### 5.6 Interactive Optical Scale Calibration
+
+Foolproof 2-point interactive calibration for optical pixel scale ($s_{\text{px}}$ in $\text{m/px}$) and inner tube
+diameter:
+
+```bash
+# In millimeters (recommended):
+python main.py calibrate --input dataset/images -smm 20
+
+# Export calibration to both images and masks folders simultaneously:
+python main.py calibrate --input dataset/images -smm 20 -c dataset/masks
+
+# Or in meters:
+python main.py calibrate --input dataset/images -s 0.020
+```
+
+1. **Toolbar Controls**: Use the standard Matplotlib magnifier/hand tools to zoom and pan with pixel accuracy.
+2. **Point Selection**: Left-click to place Point 1 and Point 2 across the tube diameter.
+3. **Live Angle & Scale Preview**: The window title immediately displays Euclidean distance ($L_{\text{px}}$),
+   calculated pixel scale ($\text{mm/px}$, $\text{m/px}$), optical scale ($\text{px/mm}$), line angle ($\theta^\circ$),
+   and displacements ($\Delta x$, $\Delta y$).
+4. **Drag & Arrow Nudging**:
+    - **Direct Drag**: Click and drag either point with the mouse to adjust its position.
+    - **Arrow Keys**: Press `Up` / `Down` / `Left` / `Right` to nudge the active point by 1 pixel.
+    - **Subpixel Fine Tuning**: Hold `Shift + Arrow keys` to nudge by **0.2 px** for pinpoint wall edge placement.
+    - **Switch Active Point**: Press `[Tab]` (or `[1]` / `[2]`) to switch which point moves. The active point is
+      highlighted with a yellow circle.
+5. **Alignment Snapping**: Press `[V]` to snap Point 2 to a **perfectly vertical** line ($x_2 = x_1$, $\Delta x = 0$),
+   `[H]` to snap to a **perfectly horizontal** line ($y_2 = y_1$, $\Delta y = 0$), or `[U]` to undo snap.
+6. **Undo / Adjust**: Right-click to undo and re-pick if necessary.
+7. **Confirmation**: Press `[ENTER]` or close the window.
+8. **Report Generation**: Automatically saves `0_<folder_name>_calibration.txt` (e.g. `0_images_calibration.txt`) inside
+   the target directory. The `0_` prefix ensures the file always stays sorted right at the very top of the directory
+   tree in PyCharm and file explorers.
+9. **Dual-Folder Export (`-c` / `--copy-to`)**: Automatically exports `0_<dest_folder>_calibration.txt` (e.g.
+   `0_masks_calibration.txt`) to secondary folders such as `dataset/masks`. In interactive mode, prompts with detected
+   sibling folders.
+10. **Pipeline Auto-Detection**: Subsequent pipeline stages (`void-fraction`, `track`, `dfd`, `render`) automatically
+    detect and load `pixel_size_m` and `diameter_m` from this file if `--pixel-size` is omitted!
+
+---
+
+### 5.7 Conduit Isolation & ROI Cropping with Calibration Collision Detection
+
+Isolate the channel fluid domain interactively or with explicit ROI bounds. If existing calibration file(s) are detected
+on the images being cropped (or in the output destination), the tool prompts with 3 safe actions:
+
+```bash
+# Interactive ROI crop via unified CLI:
+python main.py crop --input dataset/raw_images --output dataset/cropped
+
+# Or with explicit bounds (skip GUI):
+python main.py crop --input dataset/raw_images --output dataset/cropped --roi 20,45,800,240
+
+# Non-interactive calibration handling via --on-calibration {delete,keep,redo}:
+python main.py crop --input dataset/raw_images --output dataset/cropped --roi 20,45,800,240 --on-calibration redo
+```
+
+**Interactive Calibration Options when Collision is Detected**:
+
+- **`[1] Delete calibration (default)`**: Deletes the outdated calibration file(s) since cropping renders previous
+  physical scales and coordinates stale.
+- **`[2] Do nothing`**: Keeps the existing calibration file intact without alteration.
+- **`[3] Redo calibration`**: Recalls and displays the previous calibration parameters (diameter, pixel scale, measured
+  distance) and prompts you for how you want to call the calibration on the cropped images (e.g.
+  `--size-mm 20 --copy-to dataset/masks`). Pressing `[ENTER]` reuses the recalled diameter automatically!
 
 ---
 
@@ -306,13 +399,14 @@ python model_training/evaluate_unet_metrics.py --model models/run_1_unet.pth --d
 python model_training/3_batch_inference.py --input dataset/images --output results/inferred_masks --model models/run_1_unet.pth
 
 # 6. Physical Analysis & 3D Reconstruction
-python model_training/4_void_fraction_reconstruct.py --masks results/inferred_masks --output-csv results/void_fraction.csv --pixel-size 8.6e-5 --diameter 0.020 --vapor-quality 0.05 --mass-flux 500.0 --render
+python model_training/4_2d_void_fraction_reconstruct.py --masks results/inferred_masks --output-csv results/void_fraction.csv --pixel-size 8.6e-5 --diameter 0.020 --vapor-quality 0.05 --mass-flux 500.0 --render
 python model_training/5_track_bubbles_kinematics.py --masks results/inferred_masks --output-dir results/kinematics --fps 2000 --pixel-size 8.6e-5 --max-disp 50
 python model_training/6_depth_from_defocus.py --images dataset/images --masks results/inferred_masks --output-csv results/dfd.csv --pixel-size 8.6e-5 --beta-eff 2000.0
 python model_training/render_3d_flow.py --mask results/inferred_masks/frame_0016_mask.png --output results/render.png --interactive-html results/render.html --pixel-size 8.6e-5 --diameter 0.020
 ```
 
 Refer to the sub-package documentation for advanced flags and implementation details:
+
 - [Image Preparation Guide](image_scripts/README.md)
 - [Model Training & Physics Guide](model_training/README.md)
 
@@ -365,23 +459,25 @@ Refer to the sub-package documentation for advanced flags and implementation det
 
 All physical quantities in the codebase are calculated and saved in standard SI units:
 
-| Physical Quantity | Symbol | SI Unit | Code Flag / Variable | Typical Range | Notes |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| Optical Scale | $s_{\text{px}}$ | $\text{m/px}$ | `--pixel-size`, `pixel_size_m` | $5\times 10^{-5} - 1\times 10^{-4}$ | E.g. $8.6\times 10^{-5}\text{ m/px} = 0.086\text{ mm/px}$. |
-| Conduit Diameter | $D$ | $\text{m}$ | `--diameter`, `diameter_m` | $0.010 - 0.050$ | Channel inner diameter (e.g. $0.020\text{ m} = 20\text{ mm}$). |
-| Gas Volume | $V_{\text{gas}}$ | $\text{m}^3$ | `gas_volume_m3` | $10^{-7} - 10^{-4}$ | Integrated 3D gas volume. |
-| Pipe Volume | $V_{\text{pipe}}$ | $\text{m}^3$ | `pipe_volume_m3` | $10^{-6} - 10^{-3}$ | Visualized section volume $\pi R^2 L$. |
-| Void Fraction | $\alpha$ | dimensionless | `void_fraction_alpha` | $0.0 - 1.0$ | Volumetric gas fraction $\sum V_{\text{gas}} / V_{\text{pipe}}$. |
-| Vapor Quality | $x$ | dimensionless | `--vapor-quality`, `x` | $0.0 - 1.0$ | Mass fraction of vapor in two-phase mixture. |
-| Mass Flux | $G$ | $\text{kg}/(\text{m}^2\cdot\text{s})$ | `--mass-flux`, `mass_flux_G` | $100 - 2000$ | Total mass flow rate per unit cross-section. |
-| Bubble Velocity | $v$ | $\text{m/s}$ | `velocity_m_s` | $0.5 - 15.0$ | Inter-frame translation $\Delta r / \Delta t$. |
-| Framing Rate | $f$ | $\text{Hz}$ ($1/\text{s}$) | `--fps`, `fps` | $1000 - 10000$ | Frame interval $\Delta t = 1/f$. |
-| Defocus Parameter | $\beta_{\text{eff}}$ | $\text{px/m}$ | `--beta-eff`, `beta_eff` | $1000 - 5000$ | Optical blur growth rate $\sigma / |\Delta z|$. |
-| Surface Tension | $\sigma$ | $\text{N/m}$ | `sigma` | $0.0589$ | Water/steam at saturation (100°C). |
-| Liquid Density | $\rho_l$ | $\text{kg/m}^3$ | `rho_l` | $958.4$ | Saturated liquid water at 100°C. |
-| Vapor Density | $\rho_v$ | $\text{kg/m}^3$ | `rho_v` | $0.597$ | Saturated steam at 100°C. |
+| Physical Quantity | Symbol               | SI Unit                               | Code Flag / Variable           | Typical Range                       | Notes                                                            |
+|:------------------|:---------------------|:--------------------------------------|:-------------------------------|:------------------------------------|:-----------------------------------------------------------------|
+| Optical Scale     | $s_{\text{px}}$      | $\text{m/px}$                         | `--pixel-size`, `pixel_size_m` | $5\times 10^{-5} - 1\times 10^{-4}$ | E.g. $8.6\times 10^{-5}\text{ m/px} = 0.086\text{ mm/px}$.       |
+| Conduit Diameter  | $D$                  | $\text{m}$                            | `--diameter`, `diameter_m`     | $0.010 - 0.050$                     | Channel inner diameter (e.g. $0.020\text{ m} = 20\text{ mm}$).   |
+| Gas Volume        | $V_{\text{gas}}$     | $\text{m}^3$                          | `gas_volume_m3`                | $10^{-7} - 10^{-4}$                 | Integrated 3D gas volume.                                        |
+| Pipe Volume       | $V_{\text{pipe}}$    | $\text{m}^3$                          | `pipe_volume_m3`               | $10^{-6} - 10^{-3}$                 | Visualized section volume $\pi R^2 L$.                           |
+| Void Fraction     | $\alpha$             | dimensionless                         | `void_fraction_alpha`          | $0.0 - 1.0$                         | Volumetric gas fraction $\sum V_{\text{gas}} / V_{\text{pipe}}$. |
+| Vapor Quality     | $x$                  | dimensionless                         | `--vapor-quality`, `x`         | $0.0 - 1.0$                         | Mass fraction of vapor in two-phase mixture.                     |
+| Mass Flux         | $G$                  | $\text{kg}/(\text{m}^2\cdot\text{s})$ | `--mass-flux`, `mass_flux_G`   | $100 - 2000$                        | Total mass flow rate per unit cross-section.                     |
+| Bubble Velocity   | $v$                  | $\text{m/s}$                          | `velocity_m_s`                 | $0.5 - 15.0$                        | Inter-frame translation $\Delta r / \Delta t$.                   |
+| Framing Rate      | $f$                  | $\text{Hz}$ ($1/\text{s}$)            | `--fps`, `fps`                 | $1000 - 10000$                      | Frame interval $\Delta t = 1/f$.                                 |
+| Defocus Parameter | $\beta_{\text{eff}}$ | $\text{px/m}$                         | `--beta-eff`, `beta_eff`       | $1000 - 5000$                       | Optical blur growth rate $\sigma /                               |\Delta z|$. |
+| Surface Tension   | $\sigma$             | $\text{N/m}$                          | `sigma`                        | $0.0589$                            | Water/steam at saturation (100°C).                               |
+| Liquid Density    | $\rho_l$             | $\text{kg/m}^3$                       | `rho_l`                        | $958.4$                             | Saturated liquid water at 100°C.                                 |
+| Vapor Density     | $\rho_v$             | $\text{kg/m}^3$                       | `rho_v`                        | $0.597$                             | Saturated steam at 100°C.                                        |
 
-> **Automated Conversion Guardrail**: In both `4_void_fraction_reconstruct.py` and `render_3d_flow.py`, if a user provides convenience values in millimeters (e.g., `--diameter 20.0` or `--pixel-size 0.086`), the parser automatically detects and converts inputs $> 0.001$ or $> 0.05$ into standard SI meters ($10^{-3}$ factor).
+> **Automated Conversion Guardrail**: In both `4_void_fraction_reconstruct.py` and `render_3d_flow.py`, if a user
+> provides convenience values in millimeters (e.g., `--diameter 20.0` or `--pixel-size 0.086`), the parser automatically
+> detects and converts inputs $> 0.001$ or $> 0.05$ into standard SI meters ($10^{-3}$ factor).
 
 ---
 
