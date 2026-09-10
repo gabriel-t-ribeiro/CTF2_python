@@ -121,6 +121,129 @@ def main():
         default=50.0,
         help="Max search displacement in pixels (default: 50 px)",
     )
+    p_tr.add_argument(
+        "--images",
+        "-i",
+        type=Path,
+        default=None,
+        help="Optional folder with raw images for visual background overlay",
+    )
+    p_tr.add_argument(
+        "--render-animation",
+        action="store_true",
+        help="Render slow-motion MP4 animation, PNG figures, and interactive HTML player",
+    )
+    p_tr.add_argument(
+        "--playback-fps",
+        type=float,
+        default=5.0,
+        help="Playback framerate for generated MP4 animation (default: 5.0 FPS)",
+    )
+    p_tr.add_argument(
+        "--vector-step",
+        type=float,
+        default=12.0,
+        help="Contour sampling interval in pixels for boundary vector arrows (default: 12.0)",
+    )
+
+    # Subcommand: animate-flow
+    p_anim = subparsers.add_parser(
+        "animate-flow",
+        aliases=["visualize-tracking"],
+        help="Generate high-speed bubble velocity vector field animation (MP4, PNGs, interactive HTML)",
+    )
+    p_anim.add_argument(
+        "--masks", "-m", type=Path, required=True, help="Folder containing binary masks"
+    )
+    p_anim.add_argument(
+        "--images",
+        "-i",
+        type=Path,
+        default=None,
+        help="Optional folder containing raw high-speed flow frames",
+    )
+    p_anim.add_argument(
+        "--output-dir",
+        "-o",
+        type=Path,
+        default=Path("results/flow_animation"),
+        help="Output folder for animation video, PNG figures, HTML player, and CSV",
+    )
+    p_anim.add_argument(
+        "--fps", type=float, default=2000.0, help="Camera frame rate in 1/s (Hz, default: 2000)"
+    )
+    p_anim.add_argument(
+        "--pixel-size",
+        type=float,
+        default=None,
+        help="Pixel size in m/px (SI, default: auto-detected or 6.1e-5 = 0.061 mm/px)",
+    )
+    p_anim.add_argument(
+        "--max-disp",
+        type=float,
+        default=50.0,
+        help="Max centroid search displacement in pixels (default: 50 px)",
+    )
+    p_anim.add_argument(
+        "--vector-step",
+        type=float,
+        default=12.0,
+        help="Contour sampling interval in pixels for vector arrows (default: 12.0)",
+    )
+    p_anim.add_argument(
+        "--playback-fps",
+        type=float,
+        default=5.0,
+        help="Video playback framerate for smooth slow-motion observation (default: 5.0 FPS)",
+    )
+    p_anim.add_argument(
+        "--max-duration",
+        type=float,
+        default=20.0,
+        help="Maximum duration of the rendered animation in seconds (default: 20.0 s, e.g. 10 to 30s)",
+    )
+    p_anim.add_argument(
+        "--stride",
+        type=int,
+        default=1,
+        help="Frame step between compared pairs (default: 1 for smooth consecutive frame tracking)",
+    )
+    p_anim.add_argument(
+        "--start-frame",
+        type=int,
+        default=0,
+        help="Starting frame index in the sequence (default: 0)",
+    )
+    p_anim.add_argument(
+        "--max-html-frames",
+        type=int,
+        default=150,
+        help="Maximum number of frames embedded in the interactive HTML player (default: 150)",
+    )
+    p_anim.add_argument(
+        "--save-frames",
+        action="store_true",
+        help="Save individual annotated PNG frames to disk (default: False for large datasets)",
+    )
+    p_anim.add_argument(
+        "--trail-length",
+        type=int,
+        default=5,
+        help="Number of past frames for centroid trajectory history trails (default: 5)",
+    )
+    p_anim.add_argument(
+        "--colormap",
+        type=str,
+        choices=["turbo", "viridis"],
+        default="turbo",
+        help="Perceptual colormap for velocity magnitude encoding (default: turbo)",
+    )
+    p_anim.add_argument(
+        "--vmax",
+        type=float,
+        default=None,
+        help="Fixed max speed in m/s for colormap normalization (default: 95th percentile)",
+    )
 
     # Subcommand: dfd
     p_dfd = subparsers.add_parser(
@@ -350,6 +473,32 @@ def main():
             args.fps,
             args.pixel_size,
             args.max_disp,
+            image_dir=args.images,
+            render_animation=args.render_animation,
+            playback_fps=args.playback_fps,
+            vector_step_px=args.vector_step,
+        )
+
+    elif args.command in ("animate-flow", "visualize-tracking"):
+        _resolve_auto_calibration(args, args.masks)
+        mod = importlib.import_module("model_training.visualize_flow_animation")
+        mod.render_flow_animation(
+            image_dir=args.images,
+            mask_dir=args.masks,
+            output_dir=args.output_dir,
+            fps=args.fps,
+            pixel_size_m=args.pixel_size,
+            max_disp_px=args.max_disp,
+            vector_step_px=args.vector_step,
+            playback_fps=args.playback_fps,
+            max_duration_s=args.max_duration,
+            stride=args.stride,
+            start_frame=args.start_frame,
+            trail_length=args.trail_length,
+            colormap_name=args.colormap,
+            v_max_override=args.vmax,
+            max_html_frames=args.max_html_frames,
+            save_individual_frames=args.save_frames,
         )
 
     elif args.command == "dfd":

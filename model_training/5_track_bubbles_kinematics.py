@@ -62,6 +62,10 @@ def run_tracking(
     fps: float,
     pixel_size: float,
     max_disp_px: float,
+    image_dir: Path | None = None,
+    render_animation: bool = False,
+    playback_fps: float = 5.0,
+    vector_step_px: float = 12.0,
 ):
     """
     Performs nearest-neighbor kinematic tracking and hydrodynamic breakup detection across consecutive frames.
@@ -244,6 +248,22 @@ def run_tracking(
     print(f"[DONE] Saved velocity logs (SI) to: {vel_path}")
     print(f"[DONE] Saved breakup logs (SI) to : {breakup_path}")
 
+    if render_animation:
+        from model_training.visualize_flow_animation import render_flow_animation
+
+        anim_out = output_dir / "animation"
+        print(f"\n[ANIMATION] Generating flow animation & velocity fields in: {anim_out}")
+        render_flow_animation(
+            image_dir=image_dir,
+            mask_dir=mask_dir,
+            output_dir=anim_out,
+            fps=fps,
+            pixel_size_m=pixel_size_m,
+            max_disp_px=max_disp_px,
+            vector_step_px=vector_step_px,
+            playback_fps=playback_fps,
+        )
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -255,6 +275,13 @@ if __name__ == "__main__":
         type=Path,
         required=True,
         help="Input folder with binary masks",
+    )
+    parser.add_argument(
+        "--images",
+        "-i",
+        type=Path,
+        default=None,
+        help="Optional input folder with raw images for overlay",
     )
     parser.add_argument(
         "--output-dir",
@@ -276,6 +303,33 @@ if __name__ == "__main__":
         default=50.0,
         help="Max centroid search radius in px",
     )
+    parser.add_argument(
+        "--render-animation",
+        action="store_true",
+        help="Render slow-motion MP4 animation, PNG figures, and interactive HTML viewer",
+    )
+    parser.add_argument(
+        "--playback-fps",
+        type=float,
+        default=5.0,
+        help="Playback framerate for generated MP4 animation (default: 5.0)",
+    )
+    parser.add_argument(
+        "--vector-step",
+        type=float,
+        default=12.0,
+        help="Contour sampling interval in pixels for boundary vector arrows (default: 12.0)",
+    )
     args = parser.parse_args()
 
-    run_tracking(args.masks, args.output_dir, args.fps, args.pixel_size, args.max_disp)
+    run_tracking(
+        mask_dir=args.masks,
+        output_dir=args.output_dir,
+        fps=args.fps,
+        pixel_size=args.pixel_size,
+        max_disp_px=args.max_disp,
+        image_dir=args.images,
+        render_animation=args.render_animation,
+        playback_fps=args.playback_fps,
+        vector_step_px=args.vector_step,
+    )

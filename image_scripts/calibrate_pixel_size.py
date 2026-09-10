@@ -20,7 +20,6 @@ from pathlib import Path
 from typing import Any
 
 import cv2
-import matplotlib.pyplot as plt
 
 VALID_EXTS = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp"}
 
@@ -161,6 +160,7 @@ def select_calibration_points(
     dragging_idx: list[int | None] = [None]
     original_pt2: list[tuple[float, float] | None] = [None]
     confirmed: list[bool] = [False]
+    import matplotlib.pyplot as plt
 
     fig, ax = plt.subplots(figsize=(13, 8.5))
     plt.subplots_adjust(top=0.88, bottom=0.08, left=0.06, right=0.96)
