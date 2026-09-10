@@ -427,6 +427,10 @@ def render_flow_animation(
     centroid_histories: dict[int, list[tuple[float, float, int]]] = {}
     next_global_id = 1
 
+    # Persistent ID registry: maps bubble_id -> last known centroid (x, y)
+    # Carries IDs forward from previous frame's t+1 blobs to current frame's t blobs
+    known_bubbles: dict[int, tuple[float, float]] = {}
+
     # First pass: Extract blobs, compute tracking & collect velocities for global colormap
     for idx_step, t in enumerate(step_indices):
         f_t_path = mask_files[t]
@@ -453,8 +457,33 @@ def render_flow_animation(
                     "max_speed": 0.0,
                 }
             )
+            # Clear known bubbles if no blobs detected (scene changed completely)
+            if not blobs_t1:
+                known_bubbles.clear()
             continue
 
+        # --- Assign persistent IDs to blobs_t using the known_bubbles registry ---
+        if known_bubbles:
+            known_ids = list(known_bubbles.keys())
+            known_pts = np.array([known_bubbles[kid] for kid in known_ids])
+            new_pts = np.array([b["centroid_px"] for b in blobs_t])
+            id_cost = cdist(new_pts, known_pts)
+            id_rows, id_cols = linear_sum_assignment(id_cost)
+
+            assigned_ids: set[int] = set()
+            for br, bc in zip(id_rows, id_cols):
+                if id_cost[br, bc] <= max_disp_step:
+                    inherited_id = known_ids[bc]
+                    blobs_t[br]["global_id"] = inherited_id
+                    assigned_ids.add(inherited_id)
+
+        # Any blob_t without an inherited ID is genuinely new
+        for b in blobs_t:
+            if "global_id" not in b:
+                b["global_id"] = next_global_id
+                next_global_id += 1
+
+        # --- Match blobs_t <-> blobs_t1 for velocity computation ---
         pts_t = np.array([b["centroid_px"] for b in blobs_t])
         pts_t1 = np.array([b["centroid_px"] for b in blobs_t1])
         cost_mat = cdist(pts_t, pts_t1)
@@ -469,10 +498,7 @@ def render_flow_animation(
                 b_t = blobs_t[r]
                 b_t1 = blobs_t1[c]
 
-                b_id = b_t.get("global_id", next_global_id)
-                if "global_id" not in b_t:
-                    b_t["global_id"] = b_id
-                    next_global_id += 1
+                b_id = b_t["global_id"]
                 b_t1["global_id"] = b_id
 
                 b_vecs = compute_boundary_vectors(
@@ -507,6 +533,23 @@ def render_flow_animation(
                         "boundary_vectors": b_vecs,
                     }
                 )
+
+        # --- Update known_bubbles registry for the NEXT iteration ---
+        # Use the t+1 centroids of matched bubbles (they become the "known" for the next t)
+        known_bubbles.clear()
+        for pair in matched_pairs:
+            known_bubbles[pair["bubble_id"]] = pair["centroid_t1"]
+        # Also register any unmatched blobs_t1 as new bubbles for next frame
+        matched_t1_indices = {
+            c for _, c in zip(row_ind, col_ind) if float(cost_mat[_, c]) <= max_disp_step
+        }
+        for c_idx, b_t1 in enumerate(blobs_t1):
+            if c_idx not in matched_t1_indices and "global_id" not in b_t1:
+                b_t1["global_id"] = next_global_id
+                known_bubbles[next_global_id] = b_t1["centroid_px"]
+                next_global_id += 1
+            elif c_idx not in matched_t1_indices and "global_id" in b_t1:
+                known_bubbles[b_t1["global_id"]] = b_t1["centroid_px"]
 
         mean_speed = float(np.mean([v["speed_m_s"] for v in step_vectors])) if step_vectors else 0.0
         max_speed = float(np.max([v["speed_m_s"] for v in step_vectors])) if step_vectors else 0.0
