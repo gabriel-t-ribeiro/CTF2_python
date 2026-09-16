@@ -375,7 +375,41 @@ python main.py crop --input dataset/raw_images --output dataset/cropped --roi 20
 
 ---
 
-## 6. End-to-End Modular Workflow
+## 6. Human-in-the-Loop Orchestration (`pipeline.py`)
+
+A master orchestrator (`pipeline.py`) is provided for human-in-the-loop (HITL) workflows, enabling rapid iteration of
+U-Net models by running inference, exporting to Label Studio for human verification, and retraining.
+
+### 6.1 Prepare Dataset (Inference + Label Studio Export)
+
+Generates inference masks using an existing model and creates a Label Studio JSON file containing base64 embedded images
+and polygon annotations for manual correction.
+
+```bash
+python pipeline.py prepare \
+  --images-dir dataset/images \
+  --model models/run_1_unet.pth \
+  --output-json results/hitl_preannotations.json
+```
+
+### 6.2 Train on Human-Corrected Annotations
+
+Takes a human-corrected exported JSON from Label Studio, extracts the updated image-mask pairs, and retrains the U-Net
+model.
+
+```bash
+python pipeline.py train \
+  --export-json results/human_corrected.json \
+  --dataset-dir dataset/updated_dataset \
+  --model-out models/run_2_unet.pth \
+  --epochs 40 \
+  --batch-size 8 \
+  --lr 0.001
+```
+
+---
+
+## 7. End-to-End Modular Workflow
 
 For in-depth customization and script-level tuning, each pipeline stage can also be executed modularly.
 
@@ -399,7 +433,7 @@ python model_training/evaluate_unet_metrics.py --model models/run_1_unet.pth --d
 python model_training/3_batch_inference.py --input dataset/images --output results/inferred_masks --model models/run_1_unet.pth
 
 # 6. Physical Analysis & 3D Reconstruction
-python model_training/4_2d_void_fraction_reconstruct.py --masks results/inferred_masks --output-csv results/void_fraction.csv --pixel-size 8.6e-5 --diameter 0.020 --vapor-quality 0.05 --mass-flux 500.0 --render
+python model_training/4_void_fraction_reconstruct.py --masks results/inferred_masks --output-csv results/void_fraction.csv --pixel-size 8.6e-5 --diameter 0.020 --vapor-quality 0.05 --mass-flux 500.0 --render
 python model_training/5_track_bubbles_kinematics.py --masks results/inferred_masks --output-dir results/kinematics --fps 2000 --pixel-size 8.6e-5 --max-disp 50
 python model_training/6_depth_from_defocus.py --images dataset/images --masks results/inferred_masks --output-csv results/dfd.csv --pixel-size 8.6e-5 --beta-eff 2000.0
 python model_training/render_3d_flow.py --mask results/inferred_masks/frame_0016_mask.png --output results/render.png --interactive-html results/render.html --pixel-size 8.6e-5 --diameter 0.020
@@ -412,7 +446,7 @@ Refer to the sub-package documentation for advanced flags and implementation det
 
 ---
 
-## 7. Repository Layout
+## 8. Repository Layout
 
 ```text
 .
@@ -455,7 +489,7 @@ Refer to the sub-package documentation for advanced flags and implementation det
 
 ---
 
-## 8. Engineering Standards & SI Unit Conventions
+## 9. Engineering Standards & SI Unit Conventions
 
 All physical quantities in the codebase are calculated and saved in standard SI units:
 
@@ -481,7 +515,7 @@ All physical quantities in the codebase are calculated and saved in standard SI 
 
 ---
 
-## 9. Code Quality & Pre-Commit Standards
+## 10. Code Quality & Pre-Commit Standards
 
 The repository enforces formatting and linting via **Ruff**:
 

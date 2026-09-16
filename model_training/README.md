@@ -272,7 +272,7 @@ Reconstructs frame-by-frame 3D gas volumes and void fraction $\alpha$, with opti
 comparison and 3D visual rendering:
 
 ```bash
-python model_training/4_2d_void_fraction_reconstruct.py \
+python model_training/4_void_fraction_reconstruct.py \
   --masks results/segmented_masks \
   --output-csv results/void_fraction_results.csv \
   --pixel-size 8.6e-5 \
