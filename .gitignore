@@ -4,6 +4,7 @@
 /matlab_image_processing_final/
 .DS_Store
 Thumbs.db
+/ctf2_latex/
 
 # Python & Virtual Environments
 __pycache__/
