@@ -16,6 +16,9 @@ In high-speed flow boiling experiments, two-phase hydrodynamic structures (nucle
 ```text
 Raw High-Speed Sequence (2000 FPS)
   │
+  ├──> Step -1: Optical Scale Calibration (calibrate_pixel_size.py)
+  │      └─ Interactively calculates m/px from known tube geometry
+  │
   ├──> Step 0: ROI Cropping (0_roi_crop.py)
   │      └─ Isolates active fluid conduit, removing external mounting edges
   │
@@ -58,16 +61,8 @@ OpenCV: 4.11.0
 The preprocessing scripts operate on local, untracked image directories:
 
 ```text
-images/
-├── 1st_run/
-│   ├── images_1/              # Raw cropped high-speed frames
-│   │   ├── frame_0001.png
-│   │   └── ...
-│   ├── generated_masks/       # Intermediate binary masks (255 = gas, 0 = liquid)
-│   │   ├── frame_0001_mask.png
-│   │   └── ...
-│   └── preannotations.json    # Vectorized tasks for Label Studio import
 image_scripts/
+├── calibrate_pixel_size.py     # Step -1: Optical scale calibrator (m/px)
 ├── 0_roi_crop.py               # Step 0: Interactive or headless ROI cropper
 ├── 1_background_subtraction.py # Step 1: Temporal median background subtraction
 ├── 2_generate_masks.py         # Step 2: Otsu dynamic thresholding & mask creation
@@ -78,30 +73,85 @@ image_scripts/
 
 ---
 
-## 4. Execution Workflows
+## 4. End-to-End Optical Preprocessing Recipe (`Bash 1 > Bash 2 > Bash 3`)
+
+Below is the complete chained sequence taking raw uncalibrated camera frames through calibration, cropping, background subtraction, and mask generation. Standard placeholders (`path/to/...`) can be replaced with your dataset paths (e.g. `dataset/images`, `dataset/masks`).
+
+```bash
+# Bash 1: Calibrate optical pixel size from known conduit diameter (e.g. 20 mm)
+python main.py calibrate -i path/to/raw_images --size-mm 20.0
+# (Alt: python image_scripts/calibrate_pixel_size.py -i path/to/raw_images -smm 20.0)
+
+# Bash 2: Crop active fluid conduit to isolate flow channel from mounting brackets
+python main.py crop -i path/to/raw_images -o results/cropped_frames --roi 10,10,891,328
+# (Alt: python image_scripts/0_roi_crop.py -i path/to/raw_images -o results/cropped_frames --roi 10,10,891,328)
+
+# Bash 3: Perform glare- and blur-preserving background subtraction
+python main.py bg-sub -i results/cropped_frames -o results/bg_removed
+# (Alt: python image_scripts/1_background_subtraction.py -i results/cropped_frames -o results/bg_removed)
+
+# Bash 4: Generate binary bubble segmentation masks using dynamic Otsu thresholding
+python main.py gen-masks -i results/bg_removed -o results/generated_masks --min-area 5 --max-area 50000
+# (Alt: python image_scripts/2_generate_masks.py -i results/bg_removed -o results/generated_masks --min-area 5 --max-area 50000)
+
+# Bash 5: Package masks into base64 JSON tasks for Label Studio verification
+python image_scripts/3_create_preannotations.py \
+  --images-dir results/bg_removed \
+  --masks-dir results/generated_masks \
+  --output-json results/preannotations.json
+```
+
+| Input Raw Flow Frame | Extracted Binary Mask |
+| :---: | :---: |
+| ![Raw High-Speed Frame](../docs/assets/sample_raw_frame.png) | ![Extracted Binary Mask](../docs/assets/sample_mask.png) |
+
+> **Next Stage in the Pipeline:**
+> Once masks are generated in `results/generated_masks`, you can feed them directly into:
+> - **3D Void Fraction & Timeline**: `python main.py void-fraction --masks results/generated_masks --plot-timeline`
+> - **Kinematic Tracking & Animation**: `python main.py track --masks results/generated_masks`
+
+---
+
+## 5. Step-by-Step Script Reference
+
+### Step -1: Optical Scale Calibration (`calibrate_pixel_size.py`)
+
+> **Prerequisites & Upstream Chain:**
+> `Raw Image Sequence` $\longrightarrow$ **`calibrate`** $\longrightarrow$ Optical scale report `*.txt` (`pixel_size_m`)
+
+Calibrates the optical magnification factor ($s_{\text{px}}$ in $\text{m/px}$) by selecting two points across a known channel dimension:
+
+```bash
+# Primary (Unified CLI):
+python main.py calibrate -i path/to/raw_images --size-mm 20.0
+
+# Direct Script Equivalent:
+python image_scripts/calibrate_pixel_size.py -i path/to/raw_images -smm 20.0
+```
+
+---
 
 ### Step 0: Region of Interest (ROI) Cropping (`0_roi_crop.py`)
+
+> **Prerequisites & Upstream Chain:**
+> `Raw Image Sequence` $\longrightarrow$ **`crop`** $\longrightarrow$ `results/cropped_frames/`
 
 Crops the active fluid conduit from raw sensor frames to eliminate mounting flanges and non-uniform boundary illumination.
 
 #### Option A: Headless / Scripted Execution (`--roi x,y,w,h`)
 
-Use known bounding box pixel coordinates to batch-crop frames without launching a GUI:
-
 ```bash
+# Primary (Unified CLI):
+python main.py crop \
+  -i path/to/raw_images \
+  -o results/cropped_frames \
+  --roi 10,10,891,328
+
+# Direct Script Equivalent:
 python image_scripts/0_roi_crop.py \
-  --input images/1st_run/images_1 \
+  --input path/to/raw_images \
   --output results/cropped_frames \
-  --roi 10,10,600,200
-```
-
-Expected terminal output:
-```text
-Found 14 images in images/1st_run/images_1
-Using ROI (x, y, w, h) = (10, 10, 600, 200)
-  Processed 14/14
-
-Done. Saved: 14, Failed: 0 -> results/cropped_frames
+  --roi 10,10,891,328
 ```
 
 #### Option B: Interactive Graphical Selection
@@ -109,24 +159,15 @@ Done. Saved: 14, Failed: 0 -> results/cropped_frames
 When processing a new experimental sequence with unknown pixel bounds, omit `--roi` to launch an interactive Matplotlib selection window:
 
 ```bash
-python image_scripts/0_roi_crop.py \
-  --input images/1st_run/images_1 \
-  --output results/cropped_frames \
-  --ref 0
+python main.py crop -i path/to/raw_images -o results/cropped_frames --ref 0
 ```
-
-*Selection Controls*:
-- Use the Matplotlib magnifying glass toolbar icon to zoom and pan.
-- **Left-Click**: Define the first corner, then left-click the opposite diagonal corner of the ROI rectangle.
-- **Right-Click**: Undo the last point selection.
-- **Close Window**: Automatically begins batch cropping across all sequence frames.
 
 #### Parameter Reference
 
 | Parameter | Type | Default | Units | Description |
 | :--- | :--- | :--- | :--- | :--- |
-| `--input`, `-i` | `Path` | *images/1st_run/...* | — | Directory containing raw uncropped camera frames. |
-| `--output`, `-o` | `Path` | *images/1st_run/...* | — | Output directory for cropped image files. |
+| `--input`, `-i` | `Path` | *Required* | — | Directory containing raw uncropped camera frames. |
+| `--output`, `-o` | `Path` | *Required* | — | Output directory for cropped image files. |
 | `--roi` | `str` | `None` | `px` | Bounding box coordinates formatted as `x,y,w,h`. |
 | `--ref` | `str` | `None` | — | Reference image index (e.g. `0`) or filename for GUI selection. |
 
@@ -134,9 +175,18 @@ python image_scripts/0_roi_crop.py \
 
 ### Step 1: Glare- & Blur-Preserving Background Subtraction (`1_background_subtraction.py`)
 
+> **Prerequisites & Upstream Chain:**
+> `Step 0 (results/cropped_frames)` $\longrightarrow$ **`bg-sub`** $\longrightarrow$ `results/bg_removed/`
+
 Isolates transient vapor bubbles from stationary conduit walls while protecting both internal glare spots and outer defocus blur halos.
 
 ```bash
+# Primary (Unified CLI):
+python main.py bg-sub \
+  -i results/cropped_frames \
+  -o results/bg_removed
+
+# Direct Script Equivalent:
 python image_scripts/1_background_subtraction.py \
   --input results/cropped_frames \
   --output results/bg_removed \
@@ -145,23 +195,6 @@ python image_scripts/1_background_subtraction.py \
   --margin 10 \
   --bg-value 255
 ```
-
-Expected terminal output:
-```text
-No external background provided. Computing temporal median from sequence (14 frames)...
-Estimating static background from 14 frames...
-[SAVED] Background reference saved to: results/bg_removed/static_background_reference.png
-Cleaning background across 14 frames -> 'results/bg_removed'...
-  Processed [14/14]
-
-[DONE] Background removal complete. Cleaned frames saved to: results/bg_removed
-```
-
-#### Physical Operation & Algorithmic Stages:
-1. **Temporal Median Filtering**: Samples $N$ evenly spaced frames across the sequence. Because moving vapor bubbles occupy any given spatial coordinate $(x, y)$ only momentarily, the temporal median per pixel extracts the stationary conduit structure.
-2. **Absolute Difference & Thresholding**: Computes $|I_{\text{raw}}(x, y) - I_{\text{bg}}(x, y)| > T_{\text{diff}}$ to detect bubble boundary edges.
-3. **Internal Hole Filling**: Applies morphological closing and fills enclosed contours, ensuring that internal refraction glare spots are retained as vapor phase.
-4. **Safety Margin Dilation**: Dilates the detected bubble envelope by $r_{\text{margin}}$ pixels. Pixels inside this dilated zone retain original raw pixel values, preserving out-of-plane defocus blur for DFD analysis. Pixels outside are set to uniform background intensity (`--bg-value 255`).
 
 #### Parameter Reference
 
@@ -179,9 +212,20 @@ Cleaning background across 14 frames -> 'results/bg_removed'...
 
 ### Step 2: Binary Mask Generation (`2_generate_masks.py`)
 
-Extracts binary bubble segmentation masks from background-subtracted frames using Otsu dynamic thresholding and component area filtering.
+> **Prerequisites & Upstream Chain:**
+> `Step 1 (results/bg_removed)` $\longrightarrow$ **`gen-masks`** $\longrightarrow$ `results/generated_masks/`
+
+Extracts binary bubble segmentation masks from background-subtracted frames using Otsu dynamic thresholding and component area filtering:
 
 ```bash
+# Primary (Unified CLI):
+python main.py gen-masks \
+  -i results/bg_removed \
+  -o results/generated_masks \
+  --min-area 5 \
+  --max-area 50000
+
+# Direct Script Equivalent:
 python image_scripts/2_generate_masks.py \
   --input results/bg_removed \
   --output results/generated_masks \
@@ -189,22 +233,12 @@ python image_scripts/2_generate_masks.py \
   --max-area 50000
 ```
 
-Expected terminal output:
-```text
-Checking for images in: results/bg_removed
-Found 15 image(s) to process.
-[SUCCESS] Saved mask: Test_run_21_2_51200kHz_div_lens_4_2000fps_C001H001S0001001178_mask.png
-[SUCCESS] Saved mask: Test_run_21_2_51200kHz_div_lens_4_2000fps_C001H001S0001001179_mask.png
-...
-[DONE] Successfully generated 15/15 masks in results/generated_masks
-```
-
 #### Parameter Reference
 
 | Parameter | Type | Default | Units | Description |
 | :--- | :--- | :--- | :--- | :--- |
-| `--input`, `-i` | `Path` | `image_scripts/images_1` | — | Directory containing background-cleaned images. |
-| `--output`, `-o` | `Path` | `image_scripts/generated_masks` | — | Directory where generated binary PNG masks are saved. |
+| `--input`, `-i` | `Path` | *Required* | — | Directory containing background-cleaned images. |
+| `--output`, `-o` | `Path` | *Required* | — | Directory where generated binary PNG masks are saved. |
 | `--min-area` | `int` | `1` | `px` | Minimum connected-component area to reject sensor speckle noise. |
 | `--max-area` | `int` | `50000` | `px` | Maximum connected-component area to reject full-frame lighting artifacts. |
 
@@ -212,7 +246,10 @@ Found 15 image(s) to process.
 
 ### Step 3: Vector Pre-Annotation Serialization (`3_create_preannotations.py`)
 
-Converts binary raster masks into vector polygon tasks encoded in JSON format, directly embedding base64 image data for importing into Label Studio.
+> **Prerequisites & Upstream Chain:**
+> `results/bg_removed` + `results/generated_masks` $\longrightarrow$ **`3_create_preannotations.py`** $\longrightarrow$ `results/preannotations.json`
+
+Converts binary raster masks into vector polygon tasks encoded in JSON format, directly embedding base64 image data for importing into Label Studio:
 
 ```bash
 python image_scripts/3_create_preannotations.py \
@@ -221,30 +258,17 @@ python image_scripts/3_create_preannotations.py \
   --output-json results/preannotations.json
 ```
 
-Expected terminal output:
-```text
-[DONE] Successfully created results/preannotations.json with 15 tasks!
-```
-
-#### Parameter Reference
-
-| Parameter | Type | Default | Units | Description |
-| :--- | :--- | :--- | :--- | :--- |
-| `--images-dir` | `Path` | `image_scripts/images_1` | — | Directory containing raw or background-cleaned frames. |
-| `--masks-dir` | `Path` | `image_scripts/generated_masks` | — | Directory containing matching binary mask PNGs. |
-| `--output-json` | `Path` | `image_scripts/preannotations.json` | — | Target JSON file formatted for Label Studio task import. |
-
 ---
 
 ### Single-Frame Diagnostic Visualizer (`test_single_mask.py`)
 
-Provides visual feedback on segmentation thresholds on a single frame before running batch operations across thousands of frames.
+Provides immediate visual feedback on segmentation thresholds on a single frame before running batch operations across thousands of frames.
 
 #### Headless Mode (Automated / CI)
 
 ```bash
 python image_scripts/test_single_mask.py \
-  --image images/1st_run/images_1/Test_run_21_2_51200kHz_div_lens_4_2000fps_C001H001S0001001178.png \
+  --image dataset/images/frame_0016.png \
   --output results/test_vis.png \
   --save-mask results/test_mask.png \
   --min-area 5 \
@@ -252,35 +276,9 @@ python image_scripts/test_single_mask.py \
   --no-show
 ```
 
-Expected terminal output:
-```text
-Testing bubble segmentation on: images/1st_run/images_1/Test_run_21_2_51200kHz_div_lens_4_2000fps_C001H001S0001001178.png
-[DONE] Detected 253 bubble component(s).
-[SUCCESS] Saved binary mask to results/test_mask.png
-[SUCCESS] Saved visualization to results/test_vis.png
-```
-
-#### Interactive Mode (GUI)
-
-Omit `--no-show` to open a 3-panel Matplotlib window displaying:
-1. Original Grayscale Image
-2. Generated Binary Mask
-3. Detected Bubble Boundary Contour Overlays
-
-#### Parameter Reference
-
-| Parameter | Type | Default | Units | Description |
-| :--- | :--- | :--- | :--- | :--- |
-| `--image`, `-i` | `Path` | `None` | — | Path to source frame. If omitted, uses first image in `images_1/`. |
-| `--min-area` | `int` | `1` | `px` | Minimum connected-component area threshold. |
-| `--max-area` | `int` | `50000` | `px` | Maximum connected-component area threshold. |
-| `--output`, `-o` | `Path` | `None` | — | Optional output path to save the 3-panel diagnostic figure. |
-| `--save-mask` | `Path` | `None` | — | Optional path to export the standalone binary mask PNG. |
-| `--no-show` | `flag` | `False` | — | Disables the interactive display window (required for headless environments). |
-
 ---
 
-## 5. Label Studio Annotation Workflow
+## 6. Label Studio Annotation Workflow
 
 Import the generated JSON pre-annotations into Label Studio to rapidly establish verified ground-truth masks for neural network training:
 

@@ -192,6 +192,8 @@ def run_reconstruction(
     render_output: Path | None = None,
     pipe_center_y_px: float | None = None,
     regime_thresh_px: float | None = None,
+    plot_timeline: bool = False,
+    fps: float = 2000.0,
 ):
     """
     Executes frame-by-frame 3D void fraction reconstruction in standard SI units.
@@ -305,6 +307,28 @@ def run_reconstruction(
         rendered = render_3d_flow_visualization(first_recon_data, render_path)
         print(f"Rendered 3D artifact: {rendered}")
 
+    # If timeline plot is requested, generate publication plot and HTML dashboard
+    if plot_timeline:
+        try:
+            from model_training.plot_void_fraction_timeline import run_timeline_pipeline
+        except ImportError:
+            from plot_void_fraction_timeline import run_timeline_pipeline
+
+        timeline_plot_path = output_csv.parent / f"{output_csv.stem}_timeline.png"
+        timeline_html_path = output_csv.parent / f"{output_csv.stem}_timeline.html"
+        run_timeline_pipeline(
+            input_paths=[output_csv],
+            output_plot=timeline_plot_path,
+            output_html=timeline_html_path,
+            fps=fps,
+            time_unit="ms",
+            vapor_quality=vapor_quality,
+            mass_flux=mass_flux,
+            multi_panel=True,
+        )
+        print(f"Generated timeline plot     : {timeline_plot_path}")
+        print(f"Generated interactive viewer: {timeline_html_path}")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -373,6 +397,17 @@ if __name__ == "__main__":
         default=None,
         help="Optional pixel area threshold between small bubble and slug regimes (default: pi * R^2)",
     )
+    parser.add_argument(
+        "--plot-timeline",
+        action="store_true",
+        help="Automatically generate publication-quality void fraction timeline plot and interactive dashboard",
+    )
+    parser.add_argument(
+        "--fps",
+        type=float,
+        default=2000.0,
+        help="Camera framerate in FPS for time mapping (default: 2000.0)",
+    )
     args = parser.parse_args()
 
     run_reconstruction(
@@ -386,4 +421,6 @@ if __name__ == "__main__":
         render_output=args.render_output,
         pipe_center_y_px=args.pipe_center_y,
         regime_thresh_px=args.regime_thresh_px,
+        plot_timeline=args.plot_timeline,
+        fps=args.fps,
     )

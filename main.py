@@ -93,6 +93,17 @@ def main():
         default=None,
         help="Regime area threshold [px]",
     )
+    p_vf.add_argument(
+        "--plot-timeline",
+        action="store_true",
+        help="Automatically generate publication-quality void fraction timeline plot and interactive dashboard",
+    )
+    p_vf.add_argument(
+        "--fps",
+        type=float,
+        default=2000.0,
+        help="Camera framerate in FPS for timeline mapping (default: 2000.0)",
+    )
 
     # Subcommand: track
     p_tr = subparsers.add_parser(
@@ -279,6 +290,12 @@ def main():
         help="Effective DFD calibration in px/m",
     )
     p_dfd.add_argument(
+        "--near-wall-threshold",
+        type=float,
+        default=0.05,
+        help="Dimensionless blur threshold (sigma_tilde) for near-wall/near-focus regularization (default: 0.05)",
+    )
+    p_dfd.add_argument(
         "--background",
         "-bg",
         type=Path,
@@ -312,6 +329,109 @@ def main():
         type=float,
         default=None,
         help="Pipe diameter in meters (default: auto-detected or 0.020 m = 20 mm)",
+    )
+
+    # Subcommand: plot-vf
+    p_pvf = subparsers.add_parser(
+        "plot-vf",
+        aliases=["plot-void-fraction", "plot-timeline"],
+        help="Generate publication-grade void fraction timeline graph and interactive dashboard",
+    )
+    p_pvf.add_argument(
+        "--input",
+        "-i",
+        type=Path,
+        nargs="+",
+        required=True,
+        help="Path(s) to void fraction CSV file(s) or directory",
+    )
+    p_pvf.add_argument(
+        "--output",
+        "-o",
+        type=Path,
+        default=Path("results/void_fraction_timeline.png"),
+        help="Output path for publication figure (PNG, SVG, or PDF)",
+    )
+    p_pvf.add_argument(
+        "--html",
+        "--interactive-html",
+        dest="interactive_html",
+        type=Path,
+        default=Path("results/void_fraction_timeline.html"),
+        help="Output path for standalone interactive HTML viewer",
+    )
+    p_pvf.add_argument(
+        "--no-html",
+        action="store_true",
+        help="Disable interactive HTML dashboard generation",
+    )
+    p_pvf.add_argument(
+        "--fps",
+        type=float,
+        default=2000.0,
+        help="High-speed camera framerate in 1/s (Hz, default: 2000.0 FPS, dt = 0.5 ms)",
+    )
+    p_pvf.add_argument(
+        "--time-unit",
+        choices=["ms", "s"],
+        default="ms",
+        help="Physical time unit for timeline axis (default: ms)",
+    )
+    p_pvf.add_argument(
+        "--absolute-time",
+        action="store_true",
+        help="Use absolute camera time instead of zero-relative start time",
+    )
+    p_pvf.add_argument(
+        "--rolling-window",
+        "-w",
+        type=int,
+        default=5,
+        help="Moving average smoothing window in frames (default: 5)",
+    )
+    p_pvf.add_argument(
+        "--vapor-quality",
+        "-x",
+        type=float,
+        default=None,
+        help="Thermodynamic vapor quality x [-] for Rouhani-Axelsson benchmark",
+    )
+    p_pvf.add_argument(
+        "--mass-flux",
+        "-G",
+        type=float,
+        default=None,
+        help="Total mass flux G [kg/(m^2 s)] for Rouhani-Axelsson benchmark",
+    )
+    p_pvf.add_argument(
+        "--multi-panel",
+        action="store_true",
+        help="Generate 3-panel layout: Void fraction, Gas volume, and Distribution histogram",
+    )
+    p_pvf.add_argument(
+        "--alpha-col",
+        type=str,
+        default=None,
+        help="Explicit column name for void fraction values",
+    )
+    p_pvf.add_argument(
+        "--labels",
+        type=str,
+        nargs="+",
+        default=None,
+        help="Custom labels for series when comparing multiple CSVs",
+    )
+    p_pvf.add_argument(
+        "--title",
+        type=str,
+        default=None,
+        help="Custom figure title",
+    )
+    p_pvf.add_argument(
+        "--dpi",
+        type=int,
+        default=300,
+        help="Resolution in DPI for raster figure output (default: 300)",
     )
 
     # Subcommand: calibrate
@@ -450,7 +570,10 @@ def main():
 
     elif args.command == "void-fraction":
         _resolve_auto_calibration(args, args.masks)
-        mod = importlib.import_module("model_training.4_2d_void_fraction_reconstruct")
+        try:
+            mod = importlib.import_module("model_training.4_void_fraction_reconstruct")
+        except ModuleNotFoundError:
+            mod = importlib.import_module("model_training.4_2d_void_fraction_reconstruct")
         mod.run_reconstruction(
             args.masks,
             args.output_csv,
@@ -462,6 +585,28 @@ def main():
             render_output=args.render_output,
             pipe_center_y_px=args.pipe_center_y,
             regime_thresh_px=args.regime_thresh_px,
+            plot_timeline=getattr(args, "plot_timeline", False),
+            fps=getattr(args, "fps", 2000.0),
+        )
+
+    elif args.command in ("plot-vf", "plot-void-fraction", "plot-timeline"):
+        mod = importlib.import_module("model_training.plot_void_fraction_timeline")
+        html_out = None if args.no_html else args.interactive_html
+        mod.run_timeline_pipeline(
+            input_paths=args.input,
+            output_plot=args.output,
+            output_html=html_out,
+            fps=args.fps,
+            time_unit=args.time_unit,
+            relative_time=not args.absolute_time,
+            rolling_window=args.rolling_window,
+            vapor_quality=args.vapor_quality,
+            mass_flux=args.mass_flux,
+            multi_panel=args.multi_panel,
+            alpha_col=args.alpha_col,
+            labels=args.labels,
+            title=args.title,
+            dpi=args.dpi,
         )
 
     elif args.command == "track":
@@ -511,6 +656,7 @@ def main():
             pixel_size=args.pixel_size,
             beta_eff=args.beta_eff,
             background_path=args.background,
+            near_wall_threshold=args.near_wall_threshold,
         )
 
     elif args.command == "render":

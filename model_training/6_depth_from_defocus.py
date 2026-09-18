@@ -127,10 +127,14 @@ def analyze_frame_dfd(
     pixel_size_m: float = 6.7e-5,
     beta_eff_px_m: float = 2000.0,
     background_img: np.ndarray | None = None,
+    near_wall_sigma_threshold: float = 0.05,
 ) -> list[dict[str, Any]]:
     """
     Extracts 3D coordinates (x_m, y_m, z_m) and in-focus physical diameters (d0_m)
     for each detected bubble in the frame using single-camera DFD.
+
+    Includes near-wall regularization for sigma_tilde < near_wall_sigma_threshold
+    to eliminate near-focus blind zone instabilities on front-wall nucleating bubbles.
     """
     h, w = raw_img.shape
 
@@ -172,10 +176,20 @@ def analyze_frame_dfd(
         if len(edge_pixels.shape) != 2:
             continue
 
-        # Average gradient magnitude along bubble boundary
         ys = np.clip(edge_pixels[:, 1], 0, h - 1)
         xs = np.clip(edge_pixels[:, 0], 0, w - 1)
-        mean_edge_grad = float(np.mean(grad_mag[ys, xs]))
+        edge_grads = grad_mag[ys, xs]
+
+        # Robust trimmed-mean gradient estimation along bubble boundary
+        # Rejects outlier gradient spikes caused by bubble glare or caustic reflections
+        if len(edge_grads) >= 8:
+            p_low, p_high = np.percentile(edge_grads, [15, 85])
+            valid_grads = edge_grads[(edge_grads >= p_low) & (edge_grads <= p_high)]
+            mean_edge_grad = (
+                float(np.mean(valid_grads)) if len(valid_grads) > 0 else float(np.mean(edge_grads))
+            )
+        else:
+            mean_edge_grad = float(np.mean(edge_grads))
 
         # Dimensionless gradient: G_tilde = r_t * |dg_t / dr_t|
         g_tilde = r_t_px * mean_edge_grad
@@ -183,9 +197,21 @@ def analyze_frame_dfd(
         # Deconvolve blur size sigma_tilde and scale rho_tilde
         s_tilde, rho_tilde = dfd_model.invert(g_tilde)
 
-        # In-focus pixel diameter d0 = r_t / rho_tilde
-        d0_px = (2.0 * r_t_px) / (2.0 * rho_tilde)
-        sigma_px = s_tilde * d0_px
+        # Near-Focus Blind Zone Regularization (Rao et al., 2024; s_tilde < 0.05):
+        # In the near-wall focus regime, boundary gradient G_tilde is steep and vulnerable
+        # to pixel discretization and noise. For bubbles sliding along the heated front wall,
+        # optical blur is sub-pixel (z ~ 0, rho_tilde -> 0.5, d0 -> 2*r_t).
+        # We apply a C1-continuous smoothstep ramp to eliminate noise-induced depth oscillations:
+        is_near_wall = s_tilde < near_wall_sigma_threshold
+        if is_near_wall and near_wall_sigma_threshold > 0:
+            u = max(0.0, min(1.0, s_tilde / near_wall_sigma_threshold))
+            reg_factor = (3.0 * u**2) - (2.0 * u**3)  # Smoothstep S(u) in [0, 1]
+            rho_reg = 0.5 * (1.0 - reg_factor) + rho_tilde * reg_factor
+            d0_px = (2.0 * r_t_px) / (2.0 * rho_reg)
+            sigma_px = s_tilde * d0_px * reg_factor
+        else:
+            d0_px = (2.0 * r_t_px) / (2.0 * rho_tilde)
+            sigma_px = s_tilde * d0_px
 
         # Physical units (SI)
         d0_m = d0_px * pixel_size_m
@@ -205,6 +231,7 @@ def analyze_frame_dfd(
                 "blur_sigma_px": sigma_px,
                 "sigma_tilde": s_tilde,
                 "g_tilde": g_tilde,
+                "near_wall_zone": bool(is_near_wall),
                 "area_px": area_px,
                 "centroid_x_px": c_x_px,
                 "centroid_y_px": c_y_px,
@@ -221,6 +248,7 @@ def run_dfd_pipeline(
     pixel_size: float = 6.7e-5,
     beta_eff: float = 2000.0,
     background_path: Path | None = None,
+    near_wall_threshold: float = 0.05,
 ):
     """
     Runs single-camera Depth from Defocus analysis across all paired images and masks.
@@ -242,6 +270,7 @@ def run_dfd_pipeline(
     print(f"Executing Depth from Defocus (DFD) analysis across {len(mask_files)} frames:")
     print(f"  Pixel size (SI)     : {pixel_size_m:.6e} m/px")
     print(f"  Beta calibration    : {beta_eff:.2f} px/m")
+    print(f"  Near-wall threshold : {near_wall_threshold:.4f} (sigma_tilde)")
 
     for f_mask in mask_files:
         raw_candidates = [
@@ -266,6 +295,7 @@ def run_dfd_pipeline(
             pixel_size_m=pixel_size_m,
             beta_eff_px_m=beta_eff,
             background_img=bg_img,
+            near_wall_sigma_threshold=near_wall_threshold,
         )
 
         for r in frame_results:
@@ -290,6 +320,9 @@ def run_dfd_pipeline(
             f"Max Depth (|z|)     : {df['depth_z_m'].max():.6e} m ({df['depth_z_m'].max() * 1e3:.3f} mm)"
         )
         print(f"Mean Blur (sigma)   : {df['blur_sigma_px'].mean():.2f} px")
+        if "near_wall_zone" in df:
+            n_wall = int(df["near_wall_zone"].sum())
+            print(f"Near-Wall Bubbles   : {n_wall} ({n_wall / len(df) * 100:.1f}%)")
     print("=" * 52)
     print(f"[DONE] Saved DFD results to: {output_csv}")
 
@@ -320,6 +353,12 @@ if __name__ == "__main__":
         help="Effective DFD calibration constant in px/m",
     )
     parser.add_argument(
+        "--near-wall-threshold",
+        type=float,
+        default=0.05,
+        help="Dimensionless blur threshold (sigma_tilde) for near-wall/near-focus regularization (default: 0.05)",
+    )
+    parser.add_argument(
         "--background",
         "-bg",
         type=Path,
@@ -335,4 +374,5 @@ if __name__ == "__main__":
         pixel_size=args.pixel_size,
         beta_eff=args.beta_eff,
         background_path=args.background,
+        near_wall_threshold=args.near_wall_threshold,
     )

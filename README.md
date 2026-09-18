@@ -2,12 +2,25 @@
 
 [![Python 3.14+](https://img.shields.io/badge/python-3.14+-blue.svg)](https://www.python.org/downloads/)
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
-[![Units: SI](https://img.shields.io/badge/units-standard%20SI-success.svg)](#8-engineering-standards--si-unit-conventions)
+[![Units: SI](https://img.shields.io/badge/units-standard%20SI-success.svg)](#9-engineering-standards--si-unit-conventions)
 
 An automated computer-vision and quantitative physics pipeline for high-speed imaging of two-phase subcooled flow
 boiling in conduits. Designed for mechanical and chemical engineers, the pipeline translates high-framerate shadowgraphy
-footage (typically 2000 fps) into volumetric void fraction ($\alpha$), bubble velocity fields ($\vec{v}$), hydrodynamic
-breakup rates, and 3D spatial bubble distributions $(x, y, z)$ using single-camera Depth from Defocus (DFD).
+footage (typically 2000 fps) into volumetric void fraction ($\alpha$), temporal void fraction evolution ($\alpha(t)$),
+bubble velocity fields ($\vec{v}$), hydrodynamic breakup rates, and 3D spatial bubble distributions $(x, y, z)$ using
+single-camera Depth from Defocus (DFD).
+
+---
+
+## Visual Showcase
+
+| 3D Multi-Regime Flow Reconstruction | Void Fraction Timeline Evolution $\alpha(t)$ |
+| :---: | :---: |
+| ![3D Flow Visualization](docs/assets/3d_bubble_render.png) | ![Void Fraction Timeline](docs/assets/void_fraction_timeline.png) |
+
+| High-Speed Velocity Field Animation (2000 FPS) | Multi-Method Benchmark Comparison |
+| :---: | :---: |
+| ![High-Speed Bubble Velocity Animation](docs/assets/bubble_velocity_animation.gif) | ![Void Fraction Comparative Overlay](docs/assets/void_fraction_comparison.png) |
 
 ---
 
@@ -32,6 +45,9 @@ This repository addresses key experimental optical challenges in high-speed flow
    turbulent shear breakup via optimal bipartite assignment and projected area conservation.
 5. **Analytical Validation**: Experimental void fraction is directly validated against the Rouhani & Axelsson (1970)
    drift-flux theoretical correlation for boiling water.
+6. **Temporal Evolution & Interactive Dashboards**: Translates frame sequences into physical time axes ($t$ [ms]),
+   computing rolling averages, statistical dispersion envelopes ($\pm 1\sigma$), and standalone interactive WebGL/Chart.js
+   dashboards.
 
 ---
 
@@ -41,6 +57,7 @@ This repository addresses key experimental optical challenges in high-speed flow
 Raw High-Speed Shadowgraphy (2000 FPS)
   │
   ├──> Stage 0: Optical Preprocessing (image_scripts/)
+  │      ├─ calibrate_pixel_size.py     --> Optical magnification calibration (m/px)
   │      ├─ 0_roi_crop.py               --> Fluid conduit isolation (headless/GUI)
   │      ├─ 1_background_subtraction.py  --> Temporal median removal protecting glare & blur
   │      ├─ 2_generate_masks.py          --> Otsu dynamic thresholding & component filtering
@@ -54,7 +71,9 @@ Raw High-Speed Shadowgraphy (2000 FPS)
   │
   ├──> Stage 2: Quantitative Physics & 3D Reconstruction (model_training/)
   │      ├─ 4_void_fraction_reconstruct.py --> Dual-regime volume & Rouhani-Axelsson validation
+  │      ├─ plot_void_fraction_timeline.py --> Publication timeline figures & interactive HTML
   │      ├─ 5_track_bubbles_kinematics.py  --> 2000 FPS velocity & breakup tracking
+  │      ├─ visualize_flow_animation.py    --> Slow-motion velocity vector animations (MP4/GIF)
   │      ├─ 6_depth_from_defocus.py        --> Optical depth & in-focus sizing (Rao et al.)
   │      └─ render_3d_flow.py              --> Publication 3D figures & Three.js WebGL HTML
   │
@@ -81,12 +100,6 @@ source .venv/bin/activate
 python --version
 ```
 
-Expected terminal output:
-
-```text
-Python 3.14.0
-```
-
 ### 3.2 Fresh Installation (if configuring a new machine)
 
 ```bash
@@ -100,49 +113,26 @@ pip install opencv-python numpy pandas scipy matplotlib pillow albumentations se
 
 ## 4. Verification & Automated Test Suite
 
-Run the comprehensive unit test suite to verify physical units, dimensional consistency, mathematical model bounds, and
-optical inversion routines:
+Run the comprehensive unit test suite (40 unit tests) covering optical calibration, ROI cropping, 3D volumetric math,
+Rouhani-Axelsson drift-flux, kinematic tracking, velocity vector calculation, and void fraction timeline generation:
 
 ```bash
-python tests/test_3d_render_and_si.py
+export MPLCONFIGDIR=/tmp/mpl
+python -m unittest discover tests
 ```
 
 Expected terminal output:
-
 ```text
-Running comprehensive CTF2 verification tests...
-  [PASS] test_si_unit_scales_and_dimensions
-  [PASS] test_nan_robustness_and_ellipse_axis_sorting
-  [PASS] test_dual_regime_large_slug_confinement
-  [PASS] test_rouhani_axelsson_drift_flux_water_si
-  [PASS] test_3d_render_generation
-Tracking bubble kinematics at 2000.0 FPS across 2 frames in SI units...
-  Temporal resolution (dt)  : 5.000000e-04 s (0.500 ms)
-  Pixel size (s_px)         : 8.600000e-05 m/px
-  Max search displacement   : 4.300000e-03 m (50.0 px)
+Ran 40 tests in 1.795s
 
-====================================================
-     KINEMATICS & BREAKUP ANALYSIS SUMMARY (SI)
-====================================================
-Total Trajectory Links (Stable Pairs): 2
-Mean Velocity (Stable Pairs)        : 2.5800 m/s
-Max Velocity (Stable Pairs)         : 2.5800 m/s
-Mean Bubble Displacement            : 1.290000e-03 m
-Total Breakup Events Detected       : 0
-====================================================
-[DONE] Saved velocity logs (SI) to: results/bubble_velocities_si.csv
-[DONE] Saved breakup logs (SI) to : results/bubble_breakups_si.csv
-  [PASS] test_kinematic_tracking_optimal_bipartite_matching
-  [PASS] test_depth_from_defocus_inversion
-
-ALL 7 TESTS PASSED SUCCESSFULLY!
+OK
 ```
 
 ---
 
 ## 5. Quickstart: Unified CLI Orchestration (`main.py`)
 
-The root `main.py` entrypoint provides a single CLI dispatcher for all core pipeline stages.
+The root `main.py` entrypoint provides a single unified CLI dispatcher for all pipeline stages.
 
 ### 5.1 Subcommand Reference
 
@@ -150,166 +140,159 @@ The root `main.py` entrypoint provides a single CLI dispatcher for all core pipe
 python main.py --help
 ```
 
-```text
-usage: main.py [-h] {void-fraction,track,dfd,render,calibrate,gen-masks,bg-sub} ...
+| Subcommand | Aliases | Description |
+|:---|:---|:---|
+| `calibrate` | — | Interactively calibrate optical pixel size ($\text{m/px}$) and conduit diameter using 2 points |
+| `crop` | — | Interactive or headless ROI conduit cropping with stale calibration collision detection |
+| `bg-sub` | — | Temporal median background subtraction preserving interface blur margins |
+| `gen-masks` | — | Generate binary segmentation masks using dynamic Otsu thresholding |
+| `void-fraction` | — | Reconstruct 3D gas volumes, compute void fraction CSV, and benchmark with Rouhani-Axelsson |
+| `plot-vf` | `plot-void-fraction`, `plot-timeline` | Generate publication timeline figure (PNG/SVG) and interactive HTML dashboard |
+| `track` | — | Track bubble kinematics and hydrodynamic breakup events at 2000 FPS |
+| `animate-flow` | `visualize-tracking` | Render slow-motion velocity vector field animation (MP4, animated GIF, HTML player) |
+| `dfd` | — | Single-camera Depth from Defocus (DFD) 3D coordinate and in-focus sizing analysis |
+| `render` | — | Render publication-grade 3D flow visualization and standalone Three.js WebGL HTML |
 
-CTF2 Flow Boiling Analysis & 3D Reconstruction Pipeline
+---
 
-positional arguments:
-  {void-fraction,track,dfd,render,calibrate,gen-masks,bg-sub}
-                        Available pipeline stages
-    void-fraction       Compute 3D gas volumes and void fraction
-    track               Track bubble kinematics and breakup events at 2000 FPS
-    dfd                 Perform single-camera Depth from Defocus (DFD) analysis
-    render              Render 3D flow structure and interactive HTML
-    calibrate           Interactively calibrate optical pixel size (m/px) using 2 points
-    gen-masks           Generate initial binary masks using Otsu thresholding
-    bg-sub              Perform background subtraction preserving defocus margins
+### 5.2 Master End-to-End Workflow Recipes (`Bash 1 > Bash 2 > Bash 3`)
+
+Below are complete runnable command sequences taking raw camera footage through each analytical workflow. Standard placeholder directories (`path/to/...`) can be replaced with your dataset paths (e.g. `dataset/images`, `dataset/masks`).
+
+#### Recipe 1: Raw Footage $\to$ 3D Void Fraction $\to$ Publication Timeline & HTML Dashboard
+
+```bash
+# Bash 1: Crop fluid conduit from raw camera frames
+python main.py crop -i path/to/raw_images -o results/cropped_frames --roi 10,10,891,328
+# (Alt: python image_scripts/0_roi_crop.py -i path/to/raw_images -o results/cropped_frames --roi 10,10,891,328)
+
+# Bash 2: Generate binary segmentation masks (Otsu dynamic thresholding)
+python main.py gen-masks -i results/cropped_frames -o results/segmented_masks --min-area 5
+# (Alt: python image_scripts/2_generate_masks.py -i results/cropped_frames -o results/segmented_masks --min-area 5)
+
+# Bash 3: Reconstruct 3D volumes and calculate void fraction CSV in SI units
+python main.py void-fraction \
+  --masks results/segmented_masks \
+  -o results/void_fraction.csv \
+  --pixel-size 6.1e-5 \
+  --diameter 0.020 \
+  -x 0.05 -G 400.0 \
+  --render
+# (Alt: python model_training/4_void_fraction_reconstruct.py --masks results/segmented_masks -o results/void_fraction.csv --pixel-size 6.1e-5 --diameter 0.020 -x 0.05 -G 400.0 --render)
+
+# Bash 4: Generate publication-grade timeline plot (PNG) and interactive HTML dashboard
+python main.py plot-vf \
+  -i results/void_fraction.csv \
+  -o results/void_fraction_timeline.png \
+  --html results/void_fraction_timeline.html \
+  --fps 2000 \
+  --multi-panel \
+  -x 0.05 -G 400.0
+# (Alt: python model_training/plot_void_fraction_timeline.py -i results/void_fraction.csv -o results/void_fraction_timeline.png --html results/void_fraction_timeline.html --fps 2000 --multi-panel -x 0.05 -G 400.0)
+```
+
+> [!TIP]
+> **One-Step Shortcut**: Combine Bash 3 and Bash 4 by adding `--plot-timeline` to the `void-fraction` command:
+> ```bash
+> python main.py void-fraction --masks results/segmented_masks -o results/void_fraction.csv --plot-timeline -x 0.05 -G 400.0
+> ```
+
+---
+
+#### Recipe 2: High-Speed Bubble Velocity Field Animation & Breakup Tracking (2000 FPS)
+
+```bash
+# Bash 1: Compute bubble velocities and detect hydrodynamic breakup events
+python main.py track \
+  --masks results/segmented_masks \
+  -o results/kinematics \
+  --fps 2000 \
+  --pixel-size 6.1e-5 \
+  --max-disp 50
+# (Alt: python model_training/5_track_bubbles_kinematics.py --masks results/segmented_masks -o results/kinematics --fps 2000 --pixel-size 6.1e-5 --max-disp 50)
+
+# Bash 2: Render slow-motion velocity vector field animation (MP4, animated GIF, HTML player)
+python main.py animate-flow \
+  --masks results/segmented_masks \
+  -i results/cropped_frames \
+  -o results/flow_animation \
+  --fps 2000 \
+  --playback-fps 5.0
+# (Alt: python model_training/visualize_flow_animation.py --mask-dir results/segmented_masks --image-dir results/cropped_frames --output-dir results/flow_animation --fps 2000 --playback-fps 5.0)
 ```
 
 ---
 
-### 5.2 Execute Void Fraction Reconstruction & Benchmark
+#### Recipe 3: Multi-Method Void Fraction Comparison (Python Dual-Regime vs. MATLAB Voxel)
 
-Calculates frame-by-frame 3D gas volumes, experimental void fraction $\alpha_{\text{exp}}$, and compares against the
-Rouhani-Axelsson model:
+```bash
+# Bash 1: Run Python 3D void fraction reconstruction
+python main.py void-fraction --masks dataset/masks -o results/void_fraction_python.csv
+
+# Bash 2: Plot comparative overlay on a shared physical time axis
+python main.py plot-vf \
+  -i results/void_fraction_python.csv matlab_image_processing_final/matlab_void_fraction_masks.csv \
+  --labels "Python Dual-Regime (SI)" "MATLAB Voxel Method" \
+  -o results/void_fraction_comparison.png \
+  --html results/void_fraction_comparison.html
+```
+
+---
+
+#### Recipe 4: Single-Camera Depth from Defocus (DFD) 3D Spatial Localization
+
+```bash
+# Bash 1: Extract 3D out-of-plane depth (z) and in-focus diameter (d0)
+python main.py dfd \
+  --images results/cropped_frames \
+  --masks results/segmented_masks \
+  -o results/dfd_results.csv \
+  --pixel-size 6.1e-5 \
+  --beta-eff 2000.0
+# (Alt: python model_training/6_depth_from_defocus.py --images results/cropped_frames --masks results/segmented_masks -o results/dfd_results.csv --pixel-size 6.1e-5 --beta-eff 2000.0)
+```
+
+---
+
+### 5.3 Detailed Stage Invocations
+
+#### A. 3D Void Fraction Reconstruction (`void-fraction`)
 
 ```bash
 python main.py void-fraction \
   --masks dataset/masks \
   --output-csv results/void_fraction.csv \
-  --pixel-size 8.6e-5 \
+  --pixel-size 6.1e-5 \
   --diameter 0.020 \
   --vapor-quality 0.05 \
-  --mass-flux 500.0
+  --mass-flux 400.0 \
+  --render
 ```
 
-Expected terminal output:
+#### B. Void Fraction Timeline Graph & Interactive Dashboard (`plot-vf`)
 
-```text
-Executing 3D void fraction reconstruction in standard SI units:
-  Masks count         : 11
-  Pixel size (SI)     : 8.600000e-05 m/px (0.0860 mm/px)
-  Channel diameter (SI): 2.000000e-02 m (20.00 mm)
-  Channel radius (SI) : 1.000000e-02 m (116.3 px)
-
-====================================================
-      VOID FRACTION RECONSTRUCTION SUMMARY (SI)
-====================================================
-Frames Analyzed     : 11
-Mean Alpha (alpha_exp): 0.3027 (30.266%)
-Min Alpha           : 0.2057
-Max Alpha           : 0.3398
-Standard Dev        : 0.0402
-Mean Gas Volume     : 7.285777e-06 m³
-Mean Pipe Volume    : 2.407277e-05 m³
-----------------------------------------------------
-     ROUHANI-AXELSSON THEORETICAL BENCHMARK (SI)
-----------------------------------------------------
-Vapor Quality (x)   : 0.0500 [-]
-Mass Flux (G)       : 500.0 kg/(m² s)
-Theoretical Void (ε): 0.8839 (88.39%)
-Relative Difference : 65.76 %
-====================================================
-Results saved to    : results/void_fraction.csv
+```bash
+python main.py plot-vf \
+  -i results/void_fraction.csv \
+  -o results/void_fraction_timeline.png \
+  --html results/void_fraction_timeline.html \
+  --fps 2000 \
+  --multi-panel \
+  -x 0.05 -G 400.0
 ```
 
----
-
-### 5.3 Bubble Kinematics & Breakup Tracking
-
-Tracks bubble translation velocities and logs hydrodynamic fragmentation events:
+#### C. High-Speed Kinematics Tracking (`track`)
 
 ```bash
 python main.py track \
   --masks dataset/masks \
   --output-dir results/kinematics \
   --fps 2000 \
-  --pixel-size 8.6e-5 \
+  --pixel-size 6.1e-5 \
   --max-disp 50
 ```
 
-Expected terminal output:
-
-```text
-Tracking bubble kinematics at 2000.0 FPS across 11 frames in SI units...
-  Temporal resolution (dt)  : 5.000000e-04 s (0.500 ms)
-  Pixel size (s_px)         : 8.600000e-05 m/px
-  Max search displacement   : 4.300000e-03 m (50.0 px)
-
-====================================================
-     KINEMATICS & BREAKUP ANALYSIS SUMMARY (SI)
-====================================================
-Total Trajectory Links (All)        : 125
-Mean Velocity (All)                 : 2.9193 m/s
-Mean Bubble Displacement            : 1.459633e-03 m
-Total Breakup Events Detected       : 20
-====================================================
-[DONE] Saved velocity logs (SI) to: results/kinematics/bubble_velocities_si.csv
-[DONE] Saved breakup logs (SI) to : results/kinematics/bubble_breakups_si.csv
-```
-
----
-
-### 5.4 Single-Camera Depth from Defocus (DFD)
-
-Evaluates optical boundary gradient softening to extract 3D coordinates $(x, y, z)$ and in-focus diameters $d_0$:
-
-```bash
-python main.py dfd \
-  --images dataset/images \
-  --masks dataset/masks \
-  --output-csv results/dfd_results.csv \
-  --pixel-size 8.6e-5 \
-  --beta-eff 2000.0
-```
-
-Expected terminal output:
-
-```text
-Executing Depth from Defocus (DFD) analysis across 11 frames:
-  Pixel size (SI)     : 8.600000e-05 m/px
-  Beta calibration    : 2000.00 px/m
-
-====================================================
-      DEPTH FROM DEFOCUS (DFD) SUMMARY (SI)
-====================================================
-Total Bubbles Sized : 173
-Mean Diameter (d0)  : 4.767814e-03 m (4.768 mm)
-Mean Depth (|z|)    : 8.760282e-03 m (8.760 mm)
-Max Depth (|z|)     : 1.268535e-01 m (126.853 mm)
-Mean Blur (sigma)   : 17.52 px
-====================================================
-[DONE] Saved DFD results to: results/dfd_results.csv
-```
-
----
-
-### 5.5 3D Flow Visualization & WebGL HTML
-
-Renders high-resolution publication figures and standalone interactive 3D WebGL HTML:
-
-```bash
-python main.py render \
-  --mask dataset/masks/frame_0016.png \
-  --output-png results/3d_render.png \
-  --output-html results/3d_render.html \
-  --pixel-size 8.6e-5 \
-  --diameter 0.020
-```
-
-Expected terminal output:
-
-```text
-[DONE] Rendered 3D flow to results/3d_render.png and results/3d_render.html
-```
-
----
-
-### 5.6 Interactive Optical Scale Calibration
-
-Foolproof 2-point interactive calibration for optical pixel scale ($s_{\text{px}}$ in $\text{m/px}$) and inner tube
-diameter:
+#### D. Interactive Optical Scale Calibration (`calibrate`)
 
 ```bash
 # In millimeters (recommended):
@@ -317,61 +300,17 @@ python main.py calibrate --input dataset/images -smm 20
 
 # Export calibration to both images and masks folders simultaneously:
 python main.py calibrate --input dataset/images -smm 20 -c dataset/masks
-
-# Or in meters:
-python main.py calibrate --input dataset/images -s 0.020
 ```
 
-1. **Toolbar Controls**: Use the standard Matplotlib magnifier/hand tools to zoom and pan with pixel accuracy.
-2. **Point Selection**: Left-click to place Point 1 and Point 2 across the tube diameter.
-3. **Live Angle & Scale Preview**: The window title immediately displays Euclidean distance ($L_{\text{px}}$),
-   calculated pixel scale ($\text{mm/px}$, $\text{m/px}$), optical scale ($\text{px/mm}$), line angle ($\theta^\circ$),
-   and displacements ($\Delta x$, $\Delta y$).
-4. **Drag & Arrow Nudging**:
-    - **Direct Drag**: Click and drag either point with the mouse to adjust its position.
-    - **Arrow Keys**: Press `Up` / `Down` / `Left` / `Right` to nudge the active point by 1 pixel.
-    - **Subpixel Fine Tuning**: Hold `Shift + Arrow keys` to nudge by **0.2 px** for pinpoint wall edge placement.
-    - **Switch Active Point**: Press `[Tab]` (or `[1]` / `[2]`) to switch which point moves. The active point is
-      highlighted with a yellow circle.
-5. **Alignment Snapping**: Press `[V]` to snap Point 2 to a **perfectly vertical** line ($x_2 = x_1$, $\Delta x = 0$),
-   `[H]` to snap to a **perfectly horizontal** line ($y_2 = y_1$, $\Delta y = 0$), or `[U]` to undo snap.
-6. **Undo / Adjust**: Right-click to undo and re-pick if necessary.
-7. **Confirmation**: Press `[ENTER]` or close the window.
-8. **Report Generation**: Automatically saves `0_<folder_name>_calibration.txt` (e.g. `0_images_calibration.txt`) inside
-   the target directory. The `0_` prefix ensures the file always stays sorted right at the very top of the directory
-   tree in PyCharm and file explorers.
-9. **Dual-Folder Export (`-c` / `--copy-to`)**: Automatically exports `0_<dest_folder>_calibration.txt` (e.g.
-   `0_masks_calibration.txt`) to secondary folders such as `dataset/masks`. In interactive mode, prompts with detected
-   sibling folders.
-10. **Pipeline Auto-Detection**: Subsequent pipeline stages (`void-fraction`, `track`, `dfd`, `render`) automatically
-    detect and load `pixel_size_m` and `diameter_m` from this file if `--pixel-size` is omitted!
-
----
-
-### 5.7 Conduit Isolation & ROI Cropping with Calibration Collision Detection
-
-Isolate the channel fluid domain interactively or with explicit ROI bounds. If existing calibration file(s) are detected
-on the images being cropped (or in the output destination), the tool prompts with 3 safe actions:
+#### E. Conduit Isolation & ROI Cropping (`crop`)
 
 ```bash
-# Interactive ROI crop via unified CLI:
-python main.py crop --input dataset/raw_images --output dataset/cropped
+# Interactive ROI crop:
+python main.py crop --input path/to/raw_images --output results/cropped
 
-# Or with explicit bounds (skip GUI):
-python main.py crop --input dataset/raw_images --output dataset/cropped --roi 20,45,800,240
-
-# Non-interactive calibration handling via --on-calibration {delete,keep,redo}:
-python main.py crop --input dataset/raw_images --output dataset/cropped --roi 20,45,800,240 --on-calibration redo
+# Headless batch crop (skip GUI):
+python main.py crop --input path/to/raw_images --output results/cropped --roi 10,10,891,328
 ```
-
-**Interactive Calibration Options when Collision is Detected**:
-
-- **`[1] Delete calibration (default)`**: Deletes the outdated calibration file(s) since cropping renders previous
-  physical scales and coordinates stale.
-- **`[2] Do nothing`**: Keeps the existing calibration file intact without alteration.
-- **`[3] Redo calibration`**: Recalls and displays the previous calibration parameters (diameter, pixel scale, measured
-  distance) and prompts you for how you want to call the calibration on the cropped images (e.g.
-  `--size-mm 20 --copy-to dataset/masks`). Pressing `[ENTER]` reuses the recalled diameter automatically!
 
 ---
 
@@ -382,9 +321,6 @@ U-Net models by running inference, exporting to Label Studio for human verificat
 
 ### 6.1 Prepare Dataset (Inference + Label Studio Export)
 
-Generates inference masks using an existing model and creates a Label Studio JSON file containing base64 embedded images
-and polygon annotations for manual correction.
-
 ```bash
 python pipeline.py prepare \
   --images-dir dataset/images \
@@ -393,9 +329,6 @@ python pipeline.py prepare \
 ```
 
 ### 6.2 Train on Human-Corrected Annotations
-
-Takes a human-corrected exported JSON from Label Studio, extracts the updated image-mask pairs, and retrains the U-Net
-model.
 
 ```bash
 python pipeline.py train \
@@ -409,40 +342,12 @@ python pipeline.py train \
 
 ---
 
-## 7. End-to-End Modular Workflow
+## 7. Sub-Module Documentation
 
-For in-depth customization and script-level tuning, each pipeline stage can also be executed modularly.
+For in-depth customization, mathematical derivations, and script-level tuning, refer to the dedicated module guides:
 
-```bash
-# 1. Optical Preprocessing (Cropping & Glare-Preserving Background Subtraction)
-python image_scripts/0_roi_crop.py --input images/1st_run/images_1 --output results/cropped --roi 10,10,600,200
-python image_scripts/1_background_subtraction.py --input results/cropped --output results/cleaned --sample-size 50 --threshold 15 --margin 10
-python image_scripts/2_generate_masks.py --input results/cleaned --output results/masks --min-area 5 --max-area 50000
-python image_scripts/3_create_preannotations.py --images-dir results/cleaned --masks-dir results/masks --output-json results/preannotations.json
-
-# 2. Convert Verified Label Studio JSON to Training Pairs
-python model_training/1_convert_annotations.py --json model_training/project_export.json --dataset dataset
-
-# 3. Train ResNet-34 U-Net Segmentation Model
-python model_training/2_train_u_net.py --dataset dataset --output-model models/run_1_unet.pth --epochs 20 --batch-size 4 --lr 1e-3
-
-# 4. Evaluate Validation Performance
-python model_training/evaluate_unet_metrics.py --model models/run_1_unet.pth --dataset dataset --output-csv results/validation_metrics.csv
-
-# 5. Batch Inference Across Experimental Sequences
-python model_training/3_batch_inference.py --input dataset/images --output results/inferred_masks --model models/run_1_unet.pth
-
-# 6. Physical Analysis & 3D Reconstruction
-python model_training/4_void_fraction_reconstruct.py --masks results/inferred_masks --output-csv results/void_fraction.csv --pixel-size 8.6e-5 --diameter 0.020 --vapor-quality 0.05 --mass-flux 500.0 --render
-python model_training/5_track_bubbles_kinematics.py --masks results/inferred_masks --output-dir results/kinematics --fps 2000 --pixel-size 8.6e-5 --max-disp 50
-python model_training/6_depth_from_defocus.py --images dataset/images --masks results/inferred_masks --output-csv results/dfd.csv --pixel-size 8.6e-5 --beta-eff 2000.0
-python model_training/render_3d_flow.py --mask results/inferred_masks/frame_0016_mask.png --output results/render.png --interactive-html results/render.html --pixel-size 8.6e-5 --diameter 0.020
-```
-
-Refer to the sub-package documentation for advanced flags and implementation details:
-
-- [Image Preparation Guide](image_scripts/README.md)
-- [Model Training & Physics Guide](model_training/README.md)
+- [Image Preparation & Optical Calibration Guide](image_scripts/README.md)
+- [Model Training, Physics & Timeline Guide](model_training/README.md)
 
 ---
 
@@ -451,10 +356,21 @@ Refer to the sub-package documentation for advanced flags and implementation det
 ```text
 .
 ├── main.py                         # Unified CLI pipeline orchestrator
+├── pipeline.py                     # Human-in-the-loop (HITL) retraining orchestrator
 ├── pyproject.toml                  # Project metadata, Ruff & linter rules
 ├── .pre-commit-config.yaml         # Git pre-commit hook specifications
 │
+├── docs/                           # Documentation and media assets
+│   └── assets/                     # High-resolution showcase images & GIFs
+│       ├── 3d_bubble_render.png
+│       ├── void_fraction_timeline.png
+│       ├── void_fraction_comparison.png
+│       ├── bubble_velocity_animation.gif
+│       ├── sample_raw_frame.png
+│       └── sample_mask.png
+│
 ├── image_scripts/                  # Stage 0: Optical image preparation
+│   ├── calibrate_pixel_size.py     # 2-point interactive optical scale calibration
 │   ├── 0_roi_crop.py               # Conduit ROI cropping (headless/GUI)
 │   ├── 1_background_subtraction.py # Temporal median background subtraction
 │   ├── 2_generate_masks.py         # Dynamic Otsu binary mask generator
@@ -467,7 +383,9 @@ Refer to the sub-package documentation for advanced flags and implementation det
 │   ├── 2_train_u_net.py            # Trains ResNet-34 U-Net segmentation network
 │   ├── 3_batch_inference.py        # Batch neural inference across image folders
 │   ├── 4_void_fraction_reconstruct.py # 3D volume reconstruction & Rouhani-Axelsson model
+│   ├── plot_void_fraction_timeline.py # Publication timeline figures & interactive HTML
 │   ├── 5_track_bubbles_kinematics.py  # 2000 FPS bubble velocity & breakup tracking
+│   ├── visualize_flow_animation.py # 2000 FPS velocity vector animation generator
 │   ├── 6_depth_from_defocus.py     # Single-camera DFD depth & sizing analysis
 │   ├── render_3d_flow.py           # 3D Matplotlib visualizer & Three.js WebGL generator
 │   ├── evaluate_unet_metrics.py    # Validation metrics reporting (Dice, IoU, MCC)
@@ -481,10 +399,13 @@ Refer to the sub-package documentation for advanced flags and implementation det
 ├── models/                         # Trained model weights & checkpoints
 │   └── run_1_unet.pth              # Pretrained U-Net weights
 │
-├── tests/                          # Automated verification suite
-│   └── test_3d_render_and_si.py    # 7 unit tests (physics, SI units, models)
+├── tests/                          # Automated verification suite (40 unit tests)
+│   ├── test_3d_render_and_si.py    # Physics, SI units, 3D watertight mesh tests
+│   ├── test_calibration.py         # Optical calibration and cropping tests
+│   ├── test_flow_animation.py      # Bubble velocity vectors and animation tests
+│   └── test_plot_void_fraction_timeline.py # Timeline plotting, HTML, and Rouhani-Axelsson tests
 │
-└── results/                        # Generated analysis CSVs and visualizations (untracked)
+└── results/                        # Generated analysis CSVs, figures, and HTML viewers
 ```
 
 ---
@@ -495,7 +416,7 @@ All physical quantities in the codebase are calculated and saved in standard SI 
 
 | Physical Quantity | Symbol               | SI Unit                               | Code Flag / Variable           | Typical Range                       | Notes                                                            |
 |:------------------|:---------------------|:--------------------------------------|:-------------------------------|:------------------------------------|:-----------------------------------------------------------------|
-| Optical Scale     | $s_{\text{px}}$      | $\text{m/px}$                         | `--pixel-size`, `pixel_size_m` | $5\times 10^{-5} - 1\times 10^{-4}$ | E.g. $8.6\times 10^{-5}\text{ m/px} = 0.086\text{ mm/px}$.       |
+| Optical Scale     | $s_{\text{px}}$      | $\text{m/px}$                         | `--pixel-size`, `pixel_size_m` | $5\times 10^{-5} - 1\times 10^{-4}$ | E.g. $6.1\times 10^{-5}\text{ m/px} = 0.061\text{ mm/px}$.       |
 | Conduit Diameter  | $D$                  | $\text{m}$                            | `--diameter`, `diameter_m`     | $0.010 - 0.050$                     | Channel inner diameter (e.g. $0.020\text{ m} = 20\text{ mm}$).   |
 | Gas Volume        | $V_{\text{gas}}$     | $\text{m}^3$                          | `gas_volume_m3`                | $10^{-7} - 10^{-4}$                 | Integrated 3D gas volume.                                        |
 | Pipe Volume       | $V_{\text{pipe}}$    | $\text{m}^3$                          | `pipe_volume_m3`               | $10^{-6} - 10^{-3}$                 | Visualized section volume $\pi R^2 L$.                           |
@@ -504,13 +425,13 @@ All physical quantities in the codebase are calculated and saved in standard SI 
 | Mass Flux         | $G$                  | $\text{kg}/(\text{m}^2\cdot\text{s})$ | `--mass-flux`, `mass_flux_G`   | $100 - 2000$                        | Total mass flow rate per unit cross-section.                     |
 | Bubble Velocity   | $v$                  | $\text{m/s}$                          | `velocity_m_s`                 | $0.5 - 15.0$                        | Inter-frame translation $\Delta r / \Delta t$.                   |
 | Framing Rate      | $f$                  | $\text{Hz}$ ($1/\text{s}$)            | `--fps`, `fps`                 | $1000 - 10000$                      | Frame interval $\Delta t = 1/f$.                                 |
-| Defocus Parameter | $\beta_{\text{eff}}$ | $\text{px/m}$                         | `--beta-eff`, `beta_eff`       | $1000 - 5000$                       | Optical blur growth rate $\sigma /                               |\Delta z|$. |
+| Defocus Parameter | $\beta_{\text{eff}}$ | $\text{px/m}$                         | `--beta-eff`, `beta_eff`       | $1000 - 5000$                       | Optical blur growth rate $\sigma / |\Delta z|$.                  |
 | Surface Tension   | $\sigma$             | $\text{N/m}$                          | `sigma`                        | $0.0589$                            | Water/steam at saturation (100°C).                               |
 | Liquid Density    | $\rho_l$             | $\text{kg/m}^3$                       | `rho_l`                        | $958.4$                             | Saturated liquid water at 100°C.                                 |
 | Vapor Density     | $\rho_v$             | $\text{kg/m}^3$                       | `rho_v`                        | $0.597$                             | Saturated steam at 100°C.                                        |
 
 > **Automated Conversion Guardrail**: In both `4_void_fraction_reconstruct.py` and `render_3d_flow.py`, if a user
-> provides convenience values in millimeters (e.g., `--diameter 20.0` or `--pixel-size 0.086`), the parser automatically
+> provides convenience values in millimeters (e.g., `--diameter 20.0` or `--pixel-size 0.061`), the parser automatically
 > detects and converts inputs $> 0.001$ or $> 0.05$ into standard SI meters ($10^{-3}$ factor).
 
 ---
@@ -528,10 +449,4 @@ ruff format .
 
 # Run pre-commit hooks across all files
 pre-commit run --all-files
-```
-
-To install automated git pre-commit hooks:
-
-```bash
-pre-commit install
 ```

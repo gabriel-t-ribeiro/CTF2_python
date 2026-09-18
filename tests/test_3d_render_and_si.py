@@ -267,6 +267,35 @@ def test_depth_from_defocus_inversion():
     assert 0.005 <= s_blurry <= 0.35
 
 
+def test_depth_from_defocus_near_wall_regularization():
+    """Verify near-wall regularization smoothly guides sharp/near-wall bubbles to z ~ 0 and d0 ~ 2*r_t."""
+    model = DFDModel()
+    h, w = 100, 100
+    raw = np.full((h, w), 200, dtype=np.uint8)
+    mask = np.zeros((h, w), dtype=np.uint8)
+
+    # Draw a sharp circular bubble of radius 15 px at center (50, 50)
+    cv2.circle(raw, (50, 50), 15, 30, -1)
+    cv2.circle(mask, (50, 50), 15, 255, -1)
+
+    results = analyze_frame_dfd(
+        raw,
+        mask,
+        model,
+        pixel_size_m=1e-4,
+        beta_eff_px_m=2000.0,
+        near_wall_sigma_threshold=0.05,
+    )
+    assert len(results) == 1
+    res = results[0]
+    assert res["near_wall_zone"] is True
+    # Depth must be near front wall (sub-millimeter)
+    assert res["depth_z_m"] < 1e-4
+    # Diameter must accurately reflect the 30 px circle (30 * 1e-4 = 3e-3 m) within 5%
+    expected_d0 = 30.0 * 1e-4
+    assert abs(res["diameter_d0_m"] - expected_d0) / expected_d0 < 0.05
+
+
 if __name__ == "__main__":
     print("Running comprehensive CTF2 verification tests...")
     test_si_unit_scales_and_dimensions()
@@ -285,4 +314,6 @@ if __name__ == "__main__":
     print("  [PASS] test_kinematic_tracking_optimal_bipartite_matching")
     test_depth_from_defocus_inversion()
     print("  [PASS] test_depth_from_defocus_inversion")
-    print("\nALL 8 TESTS PASSED SUCCESSFULLY!")
+    test_depth_from_defocus_near_wall_regularization()
+    print("  [PASS] test_depth_from_defocus_near_wall_regularization")
+    print("\nALL 9 TESTS PASSED SUCCESSFULLY!")

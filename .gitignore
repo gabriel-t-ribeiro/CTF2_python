@@ -1,6 +1,7 @@
 # User / IDE settings
 /.idea/
-/docs/
+/docs/*
+!/docs/assets/
 /matlab_image_processing_final/
 .DS_Store
 Thumbs.db
@@ -29,6 +30,7 @@ generated_masks/
 *.jpeg
 *.tif
 *.tiff
+!docs/assets/*
 
 # Model Weights
 *.pth
