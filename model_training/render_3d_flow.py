@@ -31,7 +31,7 @@ def reconstruct_3d_bubbles_si(
     pixel_size_m: float = 6.1e-5,
     pipe_dia_m: float = 0.020,
     area_thresh_px: float = 5000.0,
-    smoothing_lambda_px: float = 0.05,
+    smoothing_lambda_px: float = 0.15,
 ) -> dict[str, Any]:
     """
     Reconstructs 3D bubble volumes from a 2D binary mask strictly in SI units.
@@ -41,7 +41,7 @@ def reconstruct_3d_bubbles_si(
         pixel_size_m: Optical scale in meters/pixel (default: 6.1e-5 m/px = 0.061 mm/px).
         pipe_dia_m: Channel internal diameter in meters (default: 0.020 m = 20.0 mm).
         area_thresh_px: Threshold area in pixels distinguishing small vs large bubbles (default 5000 px).
-        smoothing_lambda_px: Laplacian boundary smoothing factor (default 0.05).
+        smoothing_lambda_px: Laplacian boundary smoothing factor (default 0.15).
 
     Returns:
         Dictionary containing reconstructed volumes, geometries, and void fraction in SI units.
@@ -730,6 +730,14 @@ def main():
         default=None,
         help="Optional path to export interactive 3D WebGL HTML visualization",
     )
+    parser.add_argument(
+        "--smoothing-lambda",
+        "--lambda",
+        dest="smoothing_lambda",
+        type=float,
+        default=0.15,
+        help="Laplacian boundary smoothing parameter lambda in pixels (default 0.15)",
+    )
     args = parser.parse_args()
 
     # Determine SI values strictly
@@ -743,8 +751,11 @@ def main():
     print("Reconstructing 3D multi-phase flow geometry in SI units...")
     print(f"  Pixel size (SI) : {pixel_size_m:.6e} m/px ({pixel_size_m * 1e3:.4f} mm/px)")
     print(f"  Diameter (SI)   : {dia_m:.6e} m ({dia_m * 1e3:.2f} mm)")
+    print(f"  Smoothing Lambda: {args.smoothing_lambda:.4f} px")
 
-    recon_data = reconstruct_3d_bubbles_si(mask, pixel_size_m, dia_m)
+    recon_data = reconstruct_3d_bubbles_si(
+        mask, pixel_size_m, dia_m, smoothing_lambda_px=args.smoothing_lambda
+    )
 
     print(f"  Reconstructed Bubbles: {recon_data['bubble_count']}")
     print(f"  Gas Volume (SI)      : {recon_data['gas_volume_m3']:.6e} m³")

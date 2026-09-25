@@ -178,10 +178,14 @@ def train(
         else torch.cuda.amp.GradScaler(enabled=is_cuda)
     )
 
+    import time
+
+    training_start = time.perf_counter()
     best_loss = float("inf")
     output_model.parent.mkdir(parents=True, exist_ok=True)
 
     for epoch in range(1, epochs + 1):
+        epoch_start = time.perf_counter()
         model.train()
         train_loss = 0.0
 
@@ -210,15 +214,23 @@ def train(
 
         train_loss /= len(train_dataset)
         val_loss /= len(val_dataset)
+        epoch_duration = time.perf_counter() - epoch_start
 
         print(
-            f"Epoch [{epoch:02d}/{epochs}] - Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f}"
+            f"Epoch [{epoch:02d}/{epochs}] - Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f} | Time: {epoch_duration:.2f}s"
         )
 
         if val_loss < best_loss:
             best_loss = val_loss
             torch.save(model.state_dict(), output_model)
             print(f"  --> Saved best model checkpoint to: {output_model}")
+
+    total_training_time = time.perf_counter() - training_start
+    print(
+        f"[TIMING] Total Training Time: {total_training_time:.2f}s "
+        f"({total_training_time / epochs:.2f}s/epoch, "
+        f"{total_training_time / (epochs * len(train_dataset)):.4f}s/sample)"
+    )
 
 
 if __name__ == "__main__":

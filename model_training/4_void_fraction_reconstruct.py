@@ -66,7 +66,7 @@ def compute_3d_gas_volume(
     mask_2d: np.ndarray,
     pipe_radius_px: float,
     pipe_center_y_px: float,
-    smoothing_lambda: float = 0.05,
+    smoothing_lambda: float = 0.15,
     pixel_size_m: float | None = None,
     regime_thresh_px: float | None = None,
 ) -> float:

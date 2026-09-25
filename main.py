@@ -330,6 +330,14 @@ def main():
         default=None,
         help="Pipe diameter in meters (default: auto-detected or 0.020 m = 20 mm)",
     )
+    p_rend.add_argument(
+        "--smoothing-lambda",
+        "--lambda",
+        dest="smoothing_lambda",
+        type=float,
+        default=0.15,
+        help="Laplacian boundary smoothing parameter lambda in pixels (default: 0.15)",
+    )
 
     # Subcommand: plot-vf
     p_pvf = subparsers.add_parser(
@@ -668,7 +676,10 @@ def main():
         if mask is None:
             raise FileNotFoundError(f"Could not load mask at: {args.mask}")
         recon = mod.reconstruct_3d_bubbles_si(
-            mask, pixel_size_m=args.pixel_size, pipe_dia_m=args.diameter
+            mask,
+            pixel_size_m=args.pixel_size,
+            pipe_dia_m=args.diameter,
+            smoothing_lambda_px=args.smoothing_lambda,
         )
         mod.render_3d_flow_visualization(recon, args.output_png)
         mod.render_interactive_html(recon, args.output_html)

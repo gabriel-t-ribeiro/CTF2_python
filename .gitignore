@@ -5,7 +5,9 @@
 /matlab_image_processing_final/
 .DS_Store
 Thumbs.db
-/ctf2_latex/
+/ctf2_article # the article and report are stored in a separatte repo
+
+/ctf2_report # report is saved in another repo
 
 # Python & Virtual Environments
 __pycache__/
@@ -31,6 +33,8 @@ generated_masks/
 *.tif
 *.tiff
 !docs/assets/*
+!ctf2_report/assets/*
+
 
 # Model Weights
 *.pth

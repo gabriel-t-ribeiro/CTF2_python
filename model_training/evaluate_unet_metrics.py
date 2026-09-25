@@ -179,6 +179,120 @@ def evaluate_model(model_path: Path, dataset_dir: Path, output_csv: Path):
         ]
     ).to_csv(output_csv, index=False)
     print(f"[SAVED] Results exported to: {output_csv}")
+    return {
+        "Accuracy": accuracy,
+        "Precision": precision,
+        "Recall": recall,
+        "Specificity": specificity,
+        "F1_Dice": f1_dice,
+        "Jaccard_IoU": jaccard_iou,
+        "MCC": mcc,
+        "TP": total_tp,
+        "TN": total_tn,
+        "FP": total_fp,
+        "FN": total_fn,
+    }
+
+
+def compare_models(output_csv: Path):
+    configs = [
+        ("run_1_unet", Path("models/run_1_unet.pth"), "dataset (raw with bg)", Path("dataset")),
+        (
+            "run_2_unet",
+            Path("models/run_2_unet.pth"),
+            "dataset_2_no_background",
+            Path("dataset_2_no_background"),
+        ),
+        (
+            "run_2_with_bg",
+            Path("models/run_2_with_bg.pth"),
+            "dataset_2 (raw with bg)",
+            Path("dataset_2"),
+        ),
+        # 1-to-1 Controlled Pair: Same 20 frames tested on NO BG vs WITH BG
+        (
+            "run_2_unet (cross)",
+            Path("models/run_2_unet.pth"),
+            "dataset_2 (raw with bg)",
+            Path("dataset_2"),
+        ),
+        (
+            "run_2_with_bg (cross)",
+            Path("models/run_2_with_bg.pth"),
+            "dataset_2_no_background",
+            Path("dataset_2_no_background"),
+        ),
+        # Original Model tested on dataset_2 (with background)
+        (
+            "run_1_unet (cross)",
+            Path("models/run_1_unet.pth"),
+            "dataset_2 (raw with bg)",
+            Path("dataset_2"),
+        ),
+        (
+            "run_1_unet (cross)",
+            Path("models/run_1_unet.pth"),
+            "dataset_2_no_background",
+            Path("dataset_2_no_background"),
+        ),
+        (
+            "run_2_with_bg (cross)",
+            Path("models/run_2_with_bg.pth"),
+            "dataset (raw with bg)",
+            Path("dataset"),
+        ),
+        (
+            "run_2_unet (cross)",
+            Path("models/run_2_unet.pth"),
+            "dataset (raw with bg)",
+            Path("dataset"),
+        ),
+    ]
+
+    records = []
+    print("\n" + "=" * 65)
+    print("      RUNNING FULL CROSS-DATASET MODEL COMPARISON MATRIX      ")
+    print("=" * 65)
+    for model_name, m_path, d_name, d_path in configs:
+        if not m_path.exists():
+            print(f"[SKIP] Model not found: {m_path}")
+            continue
+        if not d_path.exists():
+            print(f"[SKIP] Dataset not found: {d_path}")
+            continue
+
+        print(f"\n--> Evaluating {model_name} on {d_name}...")
+        tmp_csv = Path("/tmp/eval_tmp.csv")
+        metrics = evaluate_model(m_path, d_path, tmp_csv)
+        metrics["Model"] = model_name
+        metrics["Dataset"] = d_name
+        metrics["Model_Path"] = str(m_path)
+        metrics["Dataset_Path"] = str(d_path)
+        records.append(metrics)
+
+    output_csv.parent.mkdir(parents=True, exist_ok=True)
+    df = pd.DataFrame(records)
+    cols = [
+        "Model",
+        "Dataset",
+        "Accuracy",
+        "Precision",
+        "Recall",
+        "Specificity",
+        "F1_Dice",
+        "Jaccard_IoU",
+        "MCC",
+        "TP",
+        "TN",
+        "FP",
+        "FN",
+        "Model_Path",
+        "Dataset_Path",
+    ]
+    df[cols].to_csv(output_csv, index=False)
+    print("\n" + "=" * 65)
+    print(f"[SAVED] Complete model comparison matrix saved to: {output_csv}")
+    print("=" * 65 + "\n")
 
 
 if __name__ == "__main__":
@@ -201,9 +315,17 @@ if __name__ == "__main__":
         "--output-csv",
         "-o",
         type=Path,
-        default=Path("model_validation_metrics.csv"),
+        default=Path("models/model_validation_metrics.csv"),
         help="Path to output CSV report",
+    )
+    parser.add_argument(
+        "--compare",
+        action="store_true",
+        help="Run comprehensive comparison matrix between run_1_unet and run_2_unet",
     )
     args = parser.parse_args()
 
-    evaluate_model(args.model, args.dataset, args.output_csv)
+    if args.compare:
+        compare_models(args.output_csv)
+    else:
+        evaluate_model(args.model, args.dataset, args.output_csv)
