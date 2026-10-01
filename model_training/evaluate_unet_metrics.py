@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import argparse
 import ssl
 from pathlib import Path

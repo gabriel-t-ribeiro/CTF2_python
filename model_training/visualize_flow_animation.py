@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 High-Speed Bubble Velocity Field Visualization & Flow Animation Pipeline.
 

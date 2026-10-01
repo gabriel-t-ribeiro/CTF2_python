@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 Comprehensive verification test suite for CTF2 optical pixel size calibration,
 report parsing, directory search heuristics, and pipeline auto-detection.

@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 Depth from Defocus (DFD) Analysis Module in Standard SI Units.
 

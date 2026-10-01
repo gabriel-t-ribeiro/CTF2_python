@@ -5,9 +5,7 @@
 /matlab_image_processing_final/
 .DS_Store
 Thumbs.db
-/ctf2_article # the article and report are stored in a separatte repo
 
-/ctf2_report # report is saved in another repo
 
 # Python & Virtual Environments
 __pycache__/
@@ -89,3 +87,7 @@ coverage.xml
 .mypy_cache/
 .ruff_cache/
 .ipynb_checkpoints/
+
+# The article and report are stored in separate repos
+/ctf2_article/
+/ctf2_report/

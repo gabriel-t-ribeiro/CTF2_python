@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 Comprehensive test suite for high-speed bubble velocity vector field visualization
 and flow animation pipeline (MP4, PNG figures, animated GIF, interactive HTML, and SI CSV).

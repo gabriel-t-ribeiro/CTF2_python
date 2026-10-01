@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 Comprehensive test suite for the void fraction timeline visualization pipeline.
 Tests CSV parsing, temporal time mapping, rolling average calculations,

@@ -25,3 +25,24 @@
 - **Python Codebase (`CTF2_python`)**:
   - Maintain physical SI units throughout calculations and pipeline outputs (e.g., $\text{m}$, $\text{m}^3$, $\text{m/s}$, $\text{s}$).
   - Reflect canonical terminology in variable naming (e.g., prefer `tube_radius`, `tube_diameter` over `pipe_radius`).
+
+## Scientific Figures, Vector Schematics & Diagram Styling Rules
+- **No Overlap Principle (Zero Visual Collisions)**:
+  - Text cards, equation boxes, annotations, and callouts must never straddle, collide with, or be impaled by canvas borders, container frames, plotted curves, or coordinate axes.
+  - Multi-panel or sequence schematics (e.g., inter-frame tracking transitions) must feature wide, dedicated inter-container clearance gaps ($\ge 30\%$ of container width) so that connecting status cards sit entirely in clear space without intersecting frame boundaries.
+  - Dynamic trajectory arcs, connection arrows, or curves must never be severed, covered, or obscured by overlying annotation cards. Place explanatory text cards strictly above the curve peak or below the trajectory envelope.
+- **Engineering Dimensioning Standards & Side-Pull Leader Lines**:
+  - Linear dimensions and physical lengths (e.g., chord lengths $L_{\text{chord}}$, bubble depth semi-axes $c$, search windows) must follow standard technical drawing conventions (ISO/ASME drafting standards):
+  - Project dotted extension lines (`ls=":"`) outward from the exact measurement extremities into clear canvas space.
+  - Draw a parallel double-headed arrow (`arrowstyle="<->"`) terminating precisely at the extension lines.
+  - **Side-Pull Leader Dimensioning (Constrained Spaces)**: Whenever the space between or directly beneath extension lines is narrow, crowded, or would collide with underlying geometry, centerlines, coordinate axes, or other annotations (e.g., vertical $\Delta y$ or tube axis):
+    - Do *not* squeeze or center the label card between or directly under the extension lines.
+    - Extend the horizontal dimension line outward past the outer extension line into adjacent clear canvas space as a continuous solid leader line (`ax.plot([x_ext, x_leader], [y_dim, y_dim])`).
+    - Anchor the dimension label card to the side, directly aligned with the leader line (`ha="left", va="center"`), guaranteeing zero visual collisions with the primary figure geometry.
+- **Clearance Around Gradient Curves & Shaded Regions**:
+  - Never place text boxes directly inside narrow shaded regions where curves have steep gradients (e.g., asymptotic near-wall blind zones).
+  - Place descriptive cards in adjacent open canvas space to the side of the shaded region, using a horizontal pointer arrow directed into the zone.
+  - Always maintain a clear margin ($\ge 10\text{--}15\%$ of axis range) from any plotted curve.
+- **Matplotlib Mathtext Formatting**:
+  - Never use raw LaTeX macros like `\textbf{...}` or `\&` outside math mode; use standard mathtext (e.g., `$\mathbf{(a)}$ Title & Subtitle`).
+  - Use supported mathtext operators (`\leq`, `\geq`, `\to`, `\mathrm{-}`, `\tilde{...}`).

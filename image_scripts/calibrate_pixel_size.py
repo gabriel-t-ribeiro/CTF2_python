@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 CTF2 Interactive Pixel Size Calibration Tool.
 

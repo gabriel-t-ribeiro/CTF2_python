@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 # ROI batch cropper for image sequences (e.g., high-speed video frames).
 #
 # Interactive ROI selection with zoom/pan support (matplotlib toolbar).
@@ -35,40 +36,94 @@ def list_images(folder: Path) -> list[Path]:
 
 def select_roi_interactive(image_path: Path) -> tuple[int, int, int, int]:
     """
-    Show the image with matplotlib. User zooms/pans freely, then clicks two
-    points defining opposite corners of the ROI. Returns (x, y, w, h) in
-    original image pixel coordinates.
+    Show the image with matplotlib. User zooms/pans freely, clicks two points defining
+    opposite corners of the ROI, and can drag points with mouse or nudge with arrow keys.
+    Coordinates and dimensions are displayed live in the title.
+    Returns (x, y, w, h) in original image pixel coordinates.
     """
+    import math
+
     img = cv2.imread(str(image_path))
     if img is None:
         raise OSError(f"Could not read {image_path}")
     img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    height, width = img_rgb.shape[:2]
 
     clicks: list[tuple[float, float]] = []
     current_patch: list[Rectangle | None] = [None]
-    markers = []
+    markers: list[Any] = []
+    halo_holder: list[Any] = [None]
+    active_idx: list[int] = [0]
+    dragging_idx: list[int | None] = [None]
 
-    fig, ax = plt.subplots(figsize=(12, 8))
+    fig, ax = plt.subplots(figsize=(13, 8.5))
+    plt.subplots_adjust(top=0.88, bottom=0.08, left=0.06, right=0.96)
     ax.imshow(img_rgb)
-    ax.set_title(
-        "Zoom/pan with the toolbar, then CLICK two opposite corners.\n"
-        "Right-click to undo last point. Close window when done."
-    )
 
-    def redraw_rect():
+    default_title = (
+        "ROI SELECTION: Click two opposite corners of the crop rectangle\n"
+        "Left-click: Set Point 1 & Point 2  |  Drag points to adjust  |  Zoom/Pan: Toolbar\n"
+        "[Awaiting Point 1...]"
+    )
+    title_obj = ax.set_title(default_title, fontsize=11, weight="bold", pad=12)
+
+    def redraw():
         if current_patch[0] is not None:
             current_patch[0].remove()
             current_patch[0] = None
+        if halo_holder[0] is not None:
+            halo_holder[0].remove()
+            halo_holder[0] = None
 
-        if len(clicks) == 2:
+        if len(clicks) == 0:
+            title_obj.set_text(default_title)
+            title_obj.set_color("black")
+        elif len(clicks) == 1:
+            x1, y1 = clicks[0]
+            halo = ax.plot(
+                x1, y1, "o", markersize=18, fillstyle="none", color="yellow", markeredgewidth=2.5
+            )[0]
+            halo_holder[0] = halo
+            title_obj.set_text(
+                "ROI SELECTION: Click opposite corner (Point 2)\n"
+                f"Point 1 set at: (x={x1:.1f}, y={y1:.1f}) px  -->  [CLICK Point 2]\n"
+                "Drag with mouse or use Arrow keys to nudge (Shift=fine) | Right-click: undo"
+            )
+            title_obj.set_color("darkblue")
+        elif len(clicks) == 2:
             p1, p2 = clicks[0], clicks[1]
             x1, y1 = p1[0], p1[1]
             x2, y2 = p2[0], p2[1]
-            x, y = min(x1, x2), min(y1, y2)
-            w, h = abs(x2 - x1), abs(y2 - y1)
-            rect = Rectangle((x, y), w, h, linewidth=2, edgecolor="lime", facecolor="none")
+            rx, ry = min(x1, x2), min(y1, y2)
+            rw, rh = abs(x2 - x1), abs(y2 - y1)
+
+            rect = Rectangle((rx, ry), rw, rh, linewidth=2, edgecolor="lime", facecolor="none")
             ax.add_patch(rect)
             current_patch[0] = rect
+
+            curr_act = active_idx[0]
+            if curr_act < len(clicks):
+                act_pt = clicks[curr_act]
+                halo = ax.plot(
+                    act_pt[0],
+                    act_pt[1],
+                    "o",
+                    markersize=18,
+                    fillstyle="none",
+                    color="yellow",
+                    markeredgewidth=2.5,
+                )[0]
+                halo_holder[0] = halo
+
+            act_pt = clicks[curr_act]
+            act_label = f"Pt {curr_act + 1} (x={act_pt[0]:.1f}, y={act_pt[1]:.1f})"
+            title_obj.set_text(
+                f"ROI: x={rx:.1f}, y={ry:.1f} | width={rw:.1f} px, height={rh:.1f} px\n"
+                f"Pt 1: (x={x1:.1f}, y={y1:.1f})  |  Pt 2: (x={x2:.1f}, y={y2:.1f})\n"
+                f"[Active: {act_label}] Drag mouse | Arrows: nudge (1px) | Shift+Arrows: fine (0.2px) | [Tab]: switch | [ENTER]: confirm"
+            )
+            title_obj.set_color("darkgreen")
+
         fig.canvas.draw_idle()
 
     def clear_markers():
@@ -84,23 +139,115 @@ def select_roi_interactive(image_path: Path) -> tuple[int, int, int, int]:
         if event.inaxes != ax or event.xdata is None or event.ydata is None:
             return
 
-        if event.button == 1:  # left click: add point
-            if len(clicks) >= 2:
+        if event.button == 1:  # Left click
+            # Check if clicked near an existing point (within 25 display pixels)
+            for i, (px_x, px_y) in enumerate(clicks):
+                disp_pt = ax.transData.transform((px_x, px_y))
+                dist = math.hypot(event.x - disp_pt[0], event.y - disp_pt[1])
+                if dist <= 25.0:
+                    dragging_idx[0] = i
+                    active_idx[0] = i
+                    redraw()
+                    return
+
+            if len(clicks) < 2:
+                x = float(event.xdata)
+                y = float(event.ydata)
+                clicks.append((x, y))
+                marker = ax.plot(x, y, "r+", markersize=14, mew=2.5)[0]
+                markers.append(marker)
+                active_idx[0] = len(clicks) - 1
+                redraw()
+            else:
+                # 2 points already exist and clicked far away: start over
                 clicks.clear()
                 clear_markers()
-            marker = ax.plot(event.xdata, event.ydata, "r+", markersize=12, mew=2)[0]
-            markers.append(marker)
-            clicks.append((float(event.xdata), float(event.ydata)))
-            redraw_rect()
-        elif event.button == 3:  # right click: undo
+                x = float(event.xdata)
+                y = float(event.ydata)
+                clicks.append((x, y))
+                marker = ax.plot(x, y, "r+", markersize=14, mew=2.5)[0]
+                markers.append(marker)
+                active_idx[0] = 0
+                redraw()
+
+        elif event.button == 3:  # Right click (undo)
             if clicks:
                 clicks.pop()
                 if markers:
                     markers.pop().remove()
-                redraw_rect()
+                if clicks:
+                    active_idx[0] = len(clicks) - 1
+                redraw()
+
+    def on_motion(event):
+        if (
+            dragging_idx[0] is not None
+            and event.inaxes == ax
+            and event.xdata is not None
+            and event.ydata is not None
+        ):
+            idx = dragging_idx[0]
+            nx = max(0.0, min(float(width - 1), float(event.xdata)))
+            ny = max(0.0, min(float(height - 1), float(event.ydata)))
+            clicks[idx] = (nx, ny)
+            markers[idx].set_data([nx], [ny])
+            redraw()
+
+    def on_release(event):
+        dragging_idx[0] = None
+
+    def on_key(event):
+        if event.key in ("enter", " ", "escape"):
+            if len(clicks) == 2:
+                plt.close(fig)
+        elif event.key == "tab":
+            if len(clicks) == 2:
+                active_idx[0] = 1 - active_idx[0]
+                redraw()
+        elif event.key == "1":
+            if len(clicks) >= 1:
+                active_idx[0] = 0
+                redraw()
+        elif event.key == "2":
+            if len(clicks) >= 2:
+                active_idx[0] = 1
+                redraw()
+        else:
+            # Check arrow key nudges
+            key_str = event.key.lower() if event.key else ""
+            step = 1.0
+            if "shift+" in key_str:
+                step = 0.2
+            elif "ctrl+" in key_str or "alt+" in key_str:
+                step = 5.0
+
+            arrow = key_str.split("+")[-1]
+            if arrow in ("up", "down", "left", "right") and clicks:
+                idx = active_idx[0]
+                if idx >= len(clicks):
+                    idx = len(clicks) - 1
+                cx, cy = clicks[idx]
+                if arrow == "up":
+                    cy -= step
+                elif arrow == "down":
+                    cy += step
+                elif arrow == "left":
+                    cx -= step
+                elif arrow == "right":
+                    cx += step
+
+                cx = max(0.0, min(float(width - 1), cx))
+                cy = max(0.0, min(float(height - 1), cy))
+                clicks[idx] = (cx, cy)
+                markers[idx].set_data([cx], [cy])
+                redraw()
 
     fig.canvas.mpl_connect("button_press_event", on_click)
-    plt.show()  # blocks until the user closes the window
+    fig.canvas.mpl_connect("motion_notify_event", on_motion)
+    fig.canvas.mpl_connect("button_release_event", on_release)
+    fig.canvas.mpl_connect("key_press_event", on_key)
+
+    plt.show()  # blocks until the user closes the window or presses Enter
 
     if len(clicks) != 2:
         raise ValueError("Need exactly 2 points to define the ROI.")

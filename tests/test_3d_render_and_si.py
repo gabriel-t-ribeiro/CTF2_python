@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 Comprehensive test suite verifying:
   1. SI unit refactoring (m, m^2, m^3, m/s, kg/m^3).

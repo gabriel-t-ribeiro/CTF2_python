@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 Create dataset_2 using original background images from images/background1/divergente_40kHz/
 paired with pixel-aligned ground truth masks from dataset_2_no_background/masks/.
