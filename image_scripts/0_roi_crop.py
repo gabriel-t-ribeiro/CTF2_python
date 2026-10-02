@@ -35,11 +35,16 @@ def list_images(folder: Path) -> list[Path]:
     return files
 
 
-def select_roi_interactive(image_path: Path) -> tuple[int, int, int, int]:
+def select_roi_interactive(
+    image_path: Path, fixed_size: tuple[int, int] | None = None
+) -> tuple[int, int, int, int]:
     """
-    Show the image with matplotlib. User zooms/pans freely, clicks two points defining
-    opposite corners of the ROI, and can drag points with mouse or nudge with arrow keys.
-    Coordinates and dimensions are displayed live in the title.
+    Show the image with matplotlib.
+    If fixed_size=(w, h) is None:
+      User clicks two opposite corners of the ROI freely.
+    If fixed_size=(w, h) is provided:
+      The box dimensions are locked to (w, h). User clicks once to place the top-left
+      corner, drags the box with the mouse, or nudges with arrow keys.
     Returns (x, y, w, h) in original image pixel coordinates.
     """
     import math
@@ -56,16 +61,26 @@ def select_roi_interactive(image_path: Path) -> tuple[int, int, int, int]:
     halo_holder: list[Any] = [None]
     active_idx: list[int] = [0]
     dragging_idx: list[int | None] = [None]
+    dragging_box: list[bool] = [False]
+    drag_offset: list[tuple[float, float]] = [(0.0, 0.0)]
 
     fig, ax = plt.subplots(figsize=(13, 8.5))
     plt.subplots_adjust(top=0.88, bottom=0.08, left=0.06, right=0.96)
     ax.imshow(img_rgb)
 
-    default_title = (
-        "ROI SELECTION: Click two opposite corners of the crop rectangle\n"
-        "Left-click: Set Point 1 & Point 2  |  Drag points to adjust  |  Zoom/Pan: Toolbar\n"
-        "[Awaiting Point 1...]"
-    )
+    if fixed_size is not None:
+        fw, fh = fixed_size
+        default_title = (
+            f"FIXED-SIZE ROI ({fw} x {fh} px): Click to place top-left corner\n"
+            "Left-click: Place / Drag box  |  Arrows: nudge (1px) | [ENTER]: confirm\n"
+            "[Awaiting Placement...]"
+        )
+    else:
+        default_title = (
+            "ROI SELECTION: Click two opposite corners of the crop rectangle\n"
+            "Left-click: Set Point 1 & Point 2  |  Drag points to adjust  |  Zoom/Pan: Toolbar\n"
+            "[Awaiting Point 1...]"
+        )
     title_obj = ax.set_title(default_title, fontsize=11, weight="bold", pad=12)
 
     def redraw():
@@ -79,6 +94,26 @@ def select_roi_interactive(image_path: Path) -> tuple[int, int, int, int]:
         if len(clicks) == 0:
             title_obj.set_text(default_title)
             title_obj.set_color("black")
+        elif fixed_size is not None and len(clicks) >= 1:
+            fw, fh = fixed_size
+            x1, y1 = clicks[0]
+            rx = max(0, min(width - fw, round(x1)))
+            ry = max(0, min(height - fh, round(y1)))
+
+            rect = Rectangle((rx, ry), fw, fh, linewidth=2.2, edgecolor="cyan", facecolor="none")
+            ax.add_patch(rect)
+            current_patch[0] = rect
+
+            halo = ax.plot(
+                rx, ry, "o", markersize=14, fillstyle="none", color="yellow", markeredgewidth=2.5
+            )[0]
+            halo_holder[0] = halo
+
+            title_obj.set_text(
+                f"LOCKED-SIZE ROI: Top-Left=({rx}, {ry}) | Size={fw} x {fh} px | Bottom-Right=({rx + fw}, {ry + fh})\n"
+                "Drag box with mouse | Arrows: nudge (1px) | Shift+Arrows: fine (0.2px) | [ENTER]: confirm"
+            )
+            title_obj.set_color("darkgreen")
         elif len(clicks) == 1:
             x1, y1 = clicks[0]
             halo = ax.plot(
@@ -141,6 +176,28 @@ def select_roi_interactive(image_path: Path) -> tuple[int, int, int, int]:
             return
 
         if event.button == 1:  # Left click
+            if fixed_size is not None:
+                fw, fh = fixed_size
+                # If a box is already placed, check if clicked inside it to drag it
+                if clicks:
+                    bx, by = clicks[0]
+                    if bx <= event.xdata <= bx + fw and by <= event.ydata <= by + fh:
+                        dragging_box[0] = True
+                        drag_offset[0] = (float(event.xdata) - bx, float(event.ydata) - by)
+                        return
+                # Otherwise place top-left corner here
+                clicks.clear()
+                clear_markers()
+                bx = max(0.0, min(float(width - fw), float(event.xdata)))
+                by = max(0.0, min(float(height - fh), float(event.ydata)))
+                clicks.append((bx, by))
+                m = ax.plot(bx, by, "r+", markersize=14, mew=2.5)[0]
+                markers.append(m)
+                dragging_box[0] = True
+                drag_offset[0] = (float(event.xdata) - bx, float(event.ydata) - by)
+                redraw()
+                return
+
             # Check if clicked near an existing point (within 25 display pixels)
             for i, (px_x, px_y) in enumerate(clicks):
                 disp_pt = ax.transData.transform((px_x, px_y))
@@ -181,12 +238,20 @@ def select_roi_interactive(image_path: Path) -> tuple[int, int, int, int]:
                 redraw()
 
     def on_motion(event):
-        if (
-            dragging_idx[0] is not None
-            and event.inaxes == ax
-            and event.xdata is not None
-            and event.ydata is not None
-        ):
+        if event.inaxes != ax or event.xdata is None or event.ydata is None:
+            return
+
+        if fixed_size is not None and dragging_box[0] and clicks:
+            fw, fh = fixed_size
+            ox, oy = drag_offset[0]
+            nx = max(0.0, min(float(width - fw), float(event.xdata) - ox))
+            ny = max(0.0, min(float(height - fh), float(event.ydata) - oy))
+            clicks[0] = (nx, ny)
+            markers[0].set_data([nx], [ny])
+            redraw()
+            return
+
+        if dragging_idx[0] is not None:
             idx = dragging_idx[0]
             nx = max(0.0, min(float(width - 1), float(event.xdata)))
             ny = max(0.0, min(float(height - 1), float(event.ydata)))
@@ -196,10 +261,11 @@ def select_roi_interactive(image_path: Path) -> tuple[int, int, int, int]:
 
     def on_release(event):
         dragging_idx[0] = None
+        dragging_box[0] = False
 
     def on_key(event):
         if event.key in ("enter", " ", "escape"):
-            if len(clicks) == 2:
+            if fixed_size is not None and len(clicks) >= 1 or len(clicks) == 2:
                 plt.close(fig)
         elif event.key == "tab":
             if len(clicks) == 2:
@@ -224,6 +290,24 @@ def select_roi_interactive(image_path: Path) -> tuple[int, int, int, int]:
 
             arrow = key_str.split("+")[-1]
             if arrow in ("up", "down", "left", "right") and clicks:
+                if fixed_size is not None:
+                    fw, fh = fixed_size
+                    cx, cy = clicks[0]
+                    if arrow == "up":
+                        cy -= step
+                    elif arrow == "down":
+                        cy += step
+                    elif arrow == "left":
+                        cx -= step
+                    elif arrow == "right":
+                        cx += step
+                    cx = max(0.0, min(float(width - fw), cx))
+                    cy = max(0.0, min(float(height - fh), cy))
+                    clicks[0] = (cx, cy)
+                    markers[0].set_data([cx], [cy])
+                    redraw()
+                    return
+
                 idx = active_idx[0]
                 if idx >= len(clicks):
                     idx = len(clicks) - 1
@@ -250,6 +334,14 @@ def select_roi_interactive(image_path: Path) -> tuple[int, int, int, int]:
 
     plt.show()  # blocks until the user closes the window or presses Enter
 
+    if fixed_size is not None:
+        if not clicks:
+            raise ValueError("ROI selection cancelled: box was not placed.")
+        fw, fh = fixed_size
+        x = max(0, min(width - fw, round(clicks[0][0])))
+        y = max(0, min(height - fh, round(clicks[0][1])))
+        return x, y, fw, fh
+
     if len(clicks) != 2:
         raise ValueError("Need exactly 2 points to define the ROI.")
 
@@ -266,6 +358,34 @@ def select_roi_interactive(image_path: Path) -> tuple[int, int, int, int]:
         raise ValueError("ROI has zero area.")
 
     return x, y, w, h
+
+
+def parse_size_string_or_file(size_input: str) -> tuple[int, int]:
+    """
+    Extract (width, height) from either:
+    1. A 'w,h' string (e.g. '1051,472')
+    2. An 'x,y,w,h' string (e.g. '0,137,1051,472')
+    3. A path to a crop metadata file (e.g. 0_crop_roi.txt) or folder containing one.
+    """
+    val = size_input.strip()
+    path_candidate = Path(val)
+    if path_candidate.is_dir() or path_candidate.is_file():
+        _, _, w, h = parse_roi_string_or_file(val)
+        return w, h
+
+    parts = [p.strip() for p in val.split(",")]
+    if len(parts) == 2:
+        w, h = int(parts[0]), int(parts[1])
+    elif len(parts) == 4:
+        _, _, w, h = int(parts[0]), int(parts[1]), int(parts[2]), int(parts[3])
+    else:
+        raise ValueError(
+            f"Invalid size input '{size_input}'. Expected 'w,h' (e.g. '1051,472'), "
+            "'x,y,w,h', or path to a crop metadata file/folder."
+        )
+    if w <= 0 or h <= 0:
+        raise ValueError("Width and height must be positive")
+    return w, h
 
 
 def parse_roi_string_or_file(roi_input: str) -> tuple[int, int, int, int]:
@@ -686,6 +806,7 @@ def run_crop_pipeline(
     input_dir: Path,
     output_dir: Path,
     roi_arg: str | None = None,
+    size_arg: str | None = None,
     ref_arg: str | None = None,
     on_calibration: str | None = None,
     redo_args: str | None = None,
@@ -720,8 +841,15 @@ def run_crop_pipeline(
                     if not matches:
                         raise FileNotFoundError(f"Reference image '{ref_arg}' not found") from None
                     ref = matches[0]
-        print(f"Selecting ROI on: {ref.name}")
-        roi = select_roi_interactive(ref)
+
+        fixed_size = parse_size_string_or_file(size_arg) if size_arg else None
+        if fixed_size is not None:
+            print(
+                f"Selecting position for fixed-size ROI ({fixed_size[0]} x {fixed_size[1]} px) on: {ref.name}"
+            )
+        else:
+            print(f"Selecting ROI on: {ref.name}")
+        roi = select_roi_interactive(ref, fixed_size=fixed_size)
 
     print(f"Using ROI (x, y, w, h) = {roi}")
     ref_name = (
@@ -773,6 +901,12 @@ def main():
         help="ROI as 'x,y,w,h' OR path to a metadata file (e.g. 0_crop_roi.txt) or folder containing one",
     )
     parser.add_argument(
+        "--size",
+        "-s",
+        help="Lock crop box to fixed (w,h) size (e.g. '1051,472' or path to previous crop file/folder). "
+        "Allows clicking/dragging to choose location without altering image resolution.",
+    )
+    parser.add_argument(
         "--ref",
         help="Reference image filename or index (0-based) to select ROI on (default: first image)",
         default=None,
@@ -796,6 +930,7 @@ def main():
             input_dir=args.input,
             output_dir=args.output,
             roi_arg=args.roi,
+            size_arg=args.size,
             ref_arg=args.ref,
             on_calibration=args.on_calibration,
             redo_args=args.redo_args,

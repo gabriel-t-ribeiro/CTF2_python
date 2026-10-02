@@ -513,6 +513,46 @@ def main():
         required=True,
         help="Output folder for cleaned images",
     )
+    p_bg.add_argument(
+        "--bg-source",
+        "--bg",
+        type=Path,
+        default=None,
+        help="Optional path to background image file or folder",
+    )
+    p_bg.add_argument(
+        "--threshold",
+        "-t",
+        type=int,
+        default=15,
+        help="Intensity difference threshold (0-255, default: 15; try 35-50 for shifted/noisy frames)",
+    )
+    p_bg.add_argument(
+        "--margin",
+        "-m",
+        type=int,
+        default=10,
+        help="Padding margin in pixels around bubble to preserve blur (default: 10)",
+    )
+    p_bg.add_argument(
+        "--blur",
+        type=int,
+        default=0,
+        help="Gaussian pre-blur kernel size (e.g. 3, 5) to tolerate slight focus/grain differences (default: 0)",
+    )
+    p_bg.add_argument(
+        "--sample-range",
+        "--sample-direction",
+        type=str,
+        default=None,
+        help="Consecutive frame range for background estimation as 'start,count' (e.g. '0,80' for first 80 frames) "
+        "or 'start:end' (e.g. '0:80')",
+    )
+    p_bg.add_argument(
+        "--normalize-lighting",
+        action="store_true",
+        help="Scale global brightness to match background before differencing",
+    )
 
     # Subcommand: crop
     p_crop = subparsers.add_parser(
@@ -537,6 +577,14 @@ def main():
         type=str,
         default=None,
         help="ROI coordinates as 'x,y,w,h' OR path to a crop metadata file (e.g. 0_crop_roi.txt) or folder",
+    )
+    p_crop.add_argument(
+        "--size",
+        "-s",
+        type=str,
+        default=None,
+        help="Lock crop box to fixed (w,h) size (e.g. '1051,472' or path to previous crop file/folder). "
+        "Allows clicking/dragging to choose location without altering image resolution.",
     )
     p_crop.add_argument(
         "--ref",
@@ -692,7 +740,16 @@ def main():
 
     elif args.command == "bg-sub":
         mod = importlib.import_module("image_scripts.1_background_subtraction")
-        mod.run_batch_background_removal(args.input, args.output)
+        mod.run_batch_background_removal(
+            args.input,
+            args.output,
+            bg_source=args.bg_source,
+            sample_range=args.sample_range,
+            diff_threshold=args.threshold,
+            margin_px=args.margin,
+            blur_kernel_size=args.blur,
+            normalize_lighting=args.normalize_lighting,
+        )
 
     elif args.command == "crop":
         mod = importlib.import_module("image_scripts.0_roi_crop")
@@ -700,6 +757,7 @@ def main():
             input_dir=args.input,
             output_dir=args.output,
             roi_arg=args.roi,
+            size_arg=args.size,
             ref_arg=args.ref,
             on_calibration=args.on_calibration,
             redo_args=args.redo_args,
