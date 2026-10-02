@@ -14,6 +14,7 @@
 import argparse
 import shlex
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -267,7 +268,140 @@ def select_roi_interactive(image_path: Path) -> tuple[int, int, int, int]:
     return x, y, w, h
 
 
-def crop_and_save(files: list[Path], roi: tuple[int, int, int, int], out_dir: Path) -> None:
+def parse_roi_string_or_file(roi_input: str) -> tuple[int, int, int, int]:
+    """
+    Parse an ROI from either:
+    1. A comma-separated string: "x,y,w,h" (e.g. "0,137,1051,472")
+    2. A path to a file (e.g. "0_crop_roi.txt") or directory containing a crop report.
+    Returns (x, y, w, h).
+    """
+    path_candidate = Path(roi_input.strip())
+    # If a directory was provided, check for 0_crop_roi.txt or *crop*.txt inside it
+    if path_candidate.is_dir():
+        txt_files = sorted(path_candidate.glob("*crop*.txt"))
+        if not txt_files:
+            raise FileNotFoundError(
+                f"No crop metadata (*crop*.txt) found in directory: {path_candidate}"
+            )
+        path_candidate = txt_files[0]
+
+    # If it is a file, parse the ROI from it
+    if path_candidate.is_file():
+        content = path_candidate.read_text(encoding="utf-8")
+        # 1. Look for 'roi_str=x,y,w,h'
+        for line in content.splitlines():
+            line = line.strip()
+            if line.startswith("roi_str="):
+                val = line.split("=", 1)[1].strip()
+                return parse_roi_string_or_file(val)
+        # 2. Look for individual key-values
+        kv = {}
+        for line in content.splitlines():
+            if "=" in line:
+                k, v = line.split("=", 1)
+                kv[k.strip().lower()] = v.strip()
+        if all(k in kv for k in ("roi_x", "roi_y", "roi_width", "roi_height")):
+            return (
+                int(kv["roi_x"]),
+                int(kv["roi_y"]),
+                int(kv["roi_width"]),
+                int(kv["roi_height"]),
+            )
+        # 3. Look for plain 'x,y,w,h' line
+        for line in content.splitlines():
+            parts = [p.strip() for p in line.split(",") if p.strip()]
+            if len(parts) == 4 and all(p.lstrip("-").isdigit() for p in parts):
+                return tuple(int(p) for p in parts)  # type: ignore
+
+        raise ValueError(f"Could not parse valid ROI parameters from file: {path_candidate}")
+
+    # Otherwise treat as literal "x,y,w,h"
+    parts = [p.strip() for p in roi_input.split(",")]
+    if len(parts) != 4:
+        raise ValueError(
+            f"Invalid ROI input '{roi_input}'. Expected 'x,y,w,h' (e.g. '0,137,1051,472') "
+            "or a path to a crop metadata file/folder."
+        )
+    try:
+        x, y, w, h = (int(v) for v in parts)
+    except ValueError as err:
+        raise ValueError("ROI values must be integers") from err
+    if x < 0 or y < 0:
+        raise ValueError("ROI x and y must be non-negative")
+    if w <= 0 or h <= 0:
+        raise ValueError("ROI width and height must be positive")
+    return x, y, w, h
+
+
+def save_crop_metadata(
+    output_dir: Path,
+    roi: tuple[int, int, int, int],
+    input_dir: Path | None = None,
+    ref_image_name: str | None = None,
+    total_images: int = 0,
+) -> Path:
+    """
+    Save both human-readable and machine-readable crop ROI metadata to output_dir.
+    Creates 0_crop_roi.txt (prefixed with 0_ so it sorts to the top in file explorers).
+    Includes a dedicated, prominent copy-paste string and CLI command.
+    """
+    x, y, w, h = roi
+    output_dir.mkdir(parents=True, exist_ok=True)
+    report_file = output_dir / "0_crop_roi.txt"
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    input_str = str(input_dir) if input_dir else "N/A"
+    ref_str = ref_image_name if ref_image_name else "N/A"
+    roi_str = f"{x},{y},{w},{h}"
+
+    content = f"""============================================================
+CTF2 Image Sequence Crop & ROI Report
+============================================================
+Target Directory  : {output_dir.name}
+Output Path       : {output_dir}
+Input Directory   : {input_str}
+Reference Image   : {ref_str}
+Total Images      : {total_images}
+Timestamp         : {timestamp}
+------------------------------------------------------------
+COPY-PASTE READY:
+  ROI String      : {roi_str}
+  CLI Flag        : --roi "{roi_str}"
+------------------------------------------------------------
+Crop ROI Breakdown:
+  Top-Left (x, y) : ({x}, {y}) px
+  Dimensions      : {w} (width) x {h} (height) px
+  Bottom-Right    : ({x + w}, {y + h}) px
+============================================================
+
+# QUICK COPY-PASTE VALUE (NO LABELS)
+{roi_str}
+
+# MACHINE-READABLE CROP PARAMETERS
+roi_str={roi_str}
+roi_x={x}
+roi_y={y}
+roi_width={w}
+roi_height={h}
+roi_x2={x + w}
+roi_y2={y + h}
+reference_image={ref_str}
+total_images={total_images}
+timestamp={timestamp}
+"""
+    report_file.write_text(content, encoding="utf-8")
+    print(f"  [metadata] Saved crop ROI info -> {report_file.name}")
+    print(f"  [metadata] Quick copy-paste ROI: {roi_str}")
+    return report_file
+
+
+def crop_and_save(
+    files: list[Path],
+    roi: tuple[int, int, int, int],
+    out_dir: Path,
+    ref_image_name: str | None = None,
+    input_dir: Path | None = None,
+) -> None:
     x, y, w, h = roi
     out_dir.mkdir(parents=True, exist_ok=True)
     n_ok, n_fail = 0, 0
@@ -304,6 +438,15 @@ def crop_and_save(files: list[Path], roi: tuple[int, int, int, int], out_dir: Pa
 
         if i % 100 == 0 or i == len(files):
             print(f"  Processed {i}/{len(files)}")
+
+    # Save human-readable and machine-readable metadata file
+    save_crop_metadata(
+        output_dir=out_dir,
+        roi=roi,
+        input_dir=input_dir if input_dir else (files[0].parent if files else None),
+        ref_image_name=ref_image_name,
+        total_images=n_ok,
+    )
 
     print(f"\nDone. Saved: {n_ok}, Failed: {n_fail} -> {out_dir}")
 
@@ -560,18 +703,7 @@ def run_crop_pipeline(
     )
 
     if roi_arg:
-        parts = [p.strip() for p in roi_arg.split(",")]
-        if len(parts) != 4:
-            raise ValueError("--roi expects 4 comma-separated values: x,y,w,h")
-        try:
-            x, y, w, h = (int(v) for v in parts)
-        except ValueError as err:
-            raise ValueError("ROI values must be integers") from err
-        if x < 0 or y < 0:
-            raise ValueError("ROI x and y must be non-negative")
-        if w <= 0 or h <= 0:
-            raise ValueError("ROI width and height must be positive")
-        roi = (x, y, w, h)
+        roi = parse_roi_string_or_file(roi_arg)
     else:
         if ref_arg is None:
             ref = files[0]
@@ -592,7 +724,12 @@ def run_crop_pipeline(
         roi = select_roi_interactive(ref)
 
     print(f"Using ROI (x, y, w, h) = {roi}")
-    crop_and_save(files, roi, output_dir)
+    ref_name = (
+        ref.name
+        if "ref" in locals() and hasattr(ref, "name")
+        else (files[0].name if files else None)
+    )
+    crop_and_save(files, roi, output_dir, ref_image_name=ref_name, input_dir=input_dir)
 
     if cal_action == "redo":
         print("\n[CALIBRATION] Launching calibration on newly cropped images...")
@@ -631,7 +768,10 @@ def main():
         default=result_path,
         help="Output directory for cropped images",
     )
-    parser.add_argument("--roi", help="ROI as x,y,w,h (skip interactive selection)")
+    parser.add_argument(
+        "--roi",
+        help="ROI as 'x,y,w,h' OR path to a metadata file (e.g. 0_crop_roi.txt) or folder containing one",
+    )
     parser.add_argument(
         "--ref",
         help="Reference image filename or index (0-based) to select ROI on (default: first image)",

@@ -536,7 +536,7 @@ def main():
         "--roi",
         type=str,
         default=None,
-        help="ROI coordinates as 'x,y,w,h' (skips interactive selection)",
+        help="ROI coordinates as 'x,y,w,h' OR path to a crop metadata file (e.g. 0_crop_roi.txt) or folder",
     )
     p_crop.add_argument(
         "--ref",
