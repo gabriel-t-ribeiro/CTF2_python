@@ -62,7 +62,8 @@ def run_tracking(
     output_dir: Path,
     fps: float,
     pixel_size: float,
-    max_disp_px: float,
+    max_disp_px: float | None = None,
+    v_max: float | None = 6.0,
     image_dir: Path | None = None,
     render_animation: bool = False,
     playback_fps: float = 5.0,
@@ -71,6 +72,11 @@ def run_tracking(
     """
     Performs nearest-neighbor kinematic tracking and hydrodynamic breakup detection across consecutive frames.
     All physical outputs are calculated and saved in standard SI units (m/s, m, m^2, s).
+
+    The maximum inter-frame search displacement is determined once at initialization:
+    If `v_max` (in m/s) is specified, the pixel displacement cutoff is dynamically computed:
+        max_disp_px = (v_max * dt_s) / pixel_size_m
+    ensuring scale invariance across varying optical magnifications and camera framerates.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     mask_files = sorted(mask_dir.glob("*.png"))
@@ -82,7 +88,20 @@ def run_tracking(
 
     # Inter-frame temporal resolution in SI seconds (e.g. 0.0005 s at 2000 FPS)
     dt_s = 1.0 / fps
-    max_disp_m = max_disp_px * pixel_size_m
+
+    # Compute maximum search displacement in pixels once upfront based on physical velocity or explicit px
+    if max_disp_px is not None:
+        actual_max_disp_px = float(max_disp_px)
+        cutoff_velocity_m_s = (actual_max_disp_px * pixel_size_m) / dt_s
+    elif v_max is not None:
+        cutoff_velocity_m_s = float(v_max)
+        actual_max_disp_px = (cutoff_velocity_m_s * dt_s) / pixel_size_m
+    else:
+        # Default fallback to 6.0 m/s (~50 px at ~60 um/px and 2000 fps)
+        cutoff_velocity_m_s = 6.0
+        actual_max_disp_px = (cutoff_velocity_m_s * dt_s) / pixel_size_m
+
+    max_disp_m = actual_max_disp_px * pixel_size_m
 
     velocity_records = []
     breakup_events = []
@@ -90,7 +109,8 @@ def run_tracking(
     print(f"Tracking bubble kinematics at {fps} FPS across {len(mask_files)} frames in SI units...")
     print(f"  Temporal resolution (dt)  : {dt_s:.6e} s ({dt_s * 1e3:.3f} ms)")
     print(f"  Pixel size (s_px)         : {pixel_size_m:.6e} m/px")
-    print(f"  Max search displacement   : {max_disp_m:.6e} m ({max_disp_px:.1f} px)")
+    print(f"  Physical velocity gate    : {cutoff_velocity_m_s:.2f} m/s")
+    print(f"  Precomputed max search disp: {actual_max_disp_px:.2f} px ({max_disp_m * 1e3:.3f} mm)")
 
     for t in range(len(mask_files) - 1):
         mask_t = cv2.imread(str(mask_files[t]), cv2.IMREAD_GRAYSCALE)
@@ -116,12 +136,12 @@ def run_tracking(
         dist_matrix_px = cdist(pts_t, pts_t1)
 
         # Estimate global mean translation displacement for frame t -> t+1
-        # using preliminary mutual nearest neighbors within max_disp_px
+        # using preliminary mutual nearest neighbors within actual_max_disp_px
         disp_estimates_px = []
         for idx_t, _b_t in enumerate(blobs_t):
             best_col = int(np.argmin(dist_matrix_px[idx_t]))
             if (
-                dist_matrix_px[idx_t, best_col] <= max_disp_px
+                dist_matrix_px[idx_t, best_col] <= actual_max_disp_px
                 and int(np.argmin(dist_matrix_px[:, best_col])) == idx_t
             ):
                 disp_estimates_px.append(
@@ -182,7 +202,7 @@ def run_tracking(
 
         # Optimal 1-to-1 bipartite assignment for non-breaking bubbles
         cost_matrix = np.copy(dist_matrix_px)
-        large_cost = max_disp_px * 1e4
+        large_cost = actual_max_disp_px * 1e4
         for p_idx in breakup_parent_indices:
             cost_matrix[p_idx, :] = large_cost
         for c_idx in claimed_children_indices:
@@ -194,7 +214,7 @@ def run_tracking(
             if r in breakup_parent_indices or c in claimed_children_indices:
                 continue
             min_dist_px = float(dist_matrix_px[r, c])
-            if min_dist_px <= max_disp_px:
+            if min_dist_px <= actual_max_disp_px:
                 b_t = blobs_t[r]
                 dx_px = pts_t1[c, 0] - pts_t[r, 0]
                 dy_px = pts_t1[c, 1] - pts_t[r, 1]
@@ -299,10 +319,16 @@ if __name__ == "__main__":
         help="Pixel size in meters/pixel (SI, default 8.6e-5 m/px = 0.086 mm/px)",
     )
     parser.add_argument(
+        "--v-max",
+        type=float,
+        default=6.0,
+        help="Physical maximum velocity cutoff in m/s (default: 6.0 m/s; dynamically converted to pixels once upfront)",
+    )
+    parser.add_argument(
         "--max-disp",
         type=float,
-        default=50.0,
-        help="Max centroid search radius in px",
+        default=None,
+        help="Explicit max centroid search radius in px (overrides --v-max if specified)",
     )
     parser.add_argument(
         "--render-animation",
@@ -329,6 +355,7 @@ if __name__ == "__main__":
         fps=args.fps,
         pixel_size=args.pixel_size,
         max_disp_px=args.max_disp,
+        v_max=args.v_max,
         image_dir=args.images,
         render_animation=args.render_animation,
         playback_fps=args.playback_fps,

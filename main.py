@@ -128,10 +128,16 @@ def main():
         help="Pixel size in m/px (SI, default: auto-detected or 6.1e-5 = 0.061 mm/px)",
     )
     p_tr.add_argument(
+        "--v-max",
+        type=float,
+        default=6.0,
+        help="Physical velocity cutoff in m/s (default: 6.0 m/s; dynamically converted to pixels once upfront based on calibration)",
+    )
+    p_tr.add_argument(
         "--max-disp",
         type=float,
-        default=50.0,
-        help="Max search displacement in pixels (default: 50 px)",
+        default=None,
+        help="Explicit max search displacement in pixels (overrides --v-max if passed)",
     )
     p_tr.add_argument(
         "--images",
@@ -295,6 +301,42 @@ def main():
         type=float,
         default=0.05,
         help="Dimensionless blur threshold (sigma_tilde) for near-wall/near-focus regularization (default: 0.05)",
+    )
+    p_dfd.add_argument(
+        "--max-sigma-threshold",
+        type=float,
+        default=0.35,
+        help="Upper dimensionless blur threshold (sigma_tilde) for DFD validity (default: 0.35)",
+    )
+    p_dfd.add_argument(
+        "--wall-thickness",
+        type=float,
+        default=0.003,
+        help="Borosilicate glass wall thickness in meters (default: 0.003 m = 3.0 mm)",
+    )
+    p_dfd.add_argument(
+        "--diameter",
+        "-d",
+        type=float,
+        default=0.020,
+        help="Channel inner diameter in meters (default: 0.020 m = 20.0 mm)",
+    )
+    p_dfd.add_argument(
+        "--pipe-center-y",
+        type=float,
+        default=None,
+        help="Pipe centerline y [px]",
+    )
+    p_dfd.add_argument(
+        "--render-diagnostic",
+        action="store_true",
+        help="Render publication-grade 2-panel DFD diagnostic visualizations (x-y front view and y-z depth profile)",
+    )
+    p_dfd.add_argument(
+        "--diagnostic-dir",
+        type=Path,
+        default=Path("results/dfd_diagnostics"),
+        help="Output directory for diagnostic visualizations (default: results/dfd_diagnostics)",
     )
     p_dfd.add_argument(
         "--background",
@@ -674,7 +716,8 @@ def main():
             args.output_dir,
             args.fps,
             args.pixel_size,
-            args.max_disp,
+            max_disp_px=args.max_disp,
+            v_max=args.v_max,
             image_dir=args.images,
             render_animation=args.render_animation,
             playback_fps=args.playback_fps,
@@ -714,6 +757,12 @@ def main():
             beta_eff=args.beta_eff,
             background_path=args.background,
             near_wall_threshold=args.near_wall_threshold,
+            max_sigma_threshold=args.max_sigma_threshold,
+            wall_thickness_m=args.wall_thickness,
+            inner_diameter_m=args.diameter,
+            pipe_center_y_px=args.pipe_center_y,
+            render_diagnostic=args.render_diagnostic,
+            diagnostic_output_dir=args.diagnostic_dir,
         )
 
     elif args.command == "render":

@@ -1,10 +1,14 @@
 # User / IDE settings
 /.idea/
-/docs/*
-!/docs/assets/
+.obsidian/
+/0_docs/*
+!/0_docs/assets/
+0_docs/assets/.obsidian/
 /matlab_image_processing_final/
 .DS_Store
 Thumbs.db
+scratch/
+test_dfd_ground_truth.py
 
 
 # Python & Virtual Environments
@@ -30,7 +34,8 @@ generated_masks/
 *.jpeg
 *.tif
 *.tiff
-!docs/assets/*
+!0_docs/assets/*
+0_docs/assets/.obsidian/
 !ctf2_report/assets/*
 
 

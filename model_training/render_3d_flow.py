@@ -33,6 +33,7 @@ def reconstruct_3d_bubbles_si(
     pipe_dia_m: float = 0.020,
     area_thresh_px: float = 5000.0,
     smoothing_lambda_px: float = 0.15,
+    dfd_records: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """
     Reconstructs 3D bubble volumes from a 2D binary mask strictly in SI units.
@@ -144,13 +145,33 @@ def reconstruct_3d_bubbles_si(
             vol_i_m3 = (4.0 / 3.0) * np.pi * a_m * b_m * c_m
             total_v_gas_m3 += vol_i_m3
 
+            # Incorporate physical depth offset from single-camera DFD if available
+            depth_offset_m = 0.0
+            if dfd_records:
+                best_dist = 20.0
+                best_rec = None
+                for r in dfd_records:
+                    rec_cx = r.get("centroid_x_px", -999.0)
+                    rec_cy = r.get("centroid_y_px", -999.0)
+                    dist = float(np.hypot(c_x_px - rec_cx, c_y_px - rec_cy))
+                    if dist < best_dist:
+                        best_dist = dist
+                        best_rec = r
+                if best_rec is not None and "depth_fluid_z_m" in best_rec:
+                    # Fluid depth is measured from front inner wall into the fluid at local chord height:
+                    # Front wall at centroid elevation is -z_local_max_m:
+                    raw_offset = -z_local_max_m + float(best_rec["depth_fluid_z_m"])
+                    depth_offset_m = float(
+                        np.clip(raw_offset, -z_local_max_m + c_m, z_local_max_m - c_m)
+                    )
+
             bubble_entities.append(
                 {
                     "id": i,
                     "regime": "small_ellipsoid",
                     "area_m2": area_m2,
                     "volume_m3": vol_i_m3,
-                    "centroid_m": (c_x_m, c_y_m, 0.0),
+                    "centroid_m": (c_x_m, c_y_m, depth_offset_m),
                     "semi_axes_m": (a_m, b_m, c_m),
                     "orientation_rad": angle_rad,
                     "bbox_px": (bx_px, by_px, bw_px, bh_px),
@@ -281,7 +302,7 @@ def render_3d_flow_visualization(
     # 2. Render reconstructed bubbles in SI coordinates
     for b in recon_data["bubbles"]:
         if b["regime"] == "small_ellipsoid":
-            c_x_m, c_y_m, _ = b["centroid_m"]
+            c_x_m, c_y_m, c_depth_offset_m = b["centroid_m"]
             # Map vertical image row to physical Z-axis (buoyancy direction)
             c_z_m = (y_center_px - (c_y_m / pixel_size_m)) * pixel_size_m
             a_m, b_m, c_m = b["semi_axes_m"]
@@ -297,7 +318,7 @@ def render_3d_flow_visualization(
             # Rotate in (X, Z) plane according to fitted 2D orientation
             X_rot = c_x_m + X_e * np.cos(angle_rad) - Z_e * np.sin(angle_rad)
             Z_rot = c_z_m + X_e * np.sin(angle_rad) + Z_e * np.cos(angle_rad)
-            Y_rot = y_center_m + Y_e
+            Y_rot = (y_center_m + c_depth_offset_m) + Y_e
 
             ax.plot_surface(
                 X_rot,

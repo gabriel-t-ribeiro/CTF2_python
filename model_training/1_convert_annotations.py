@@ -96,21 +96,63 @@ def convert_annotations_and_extract_images(json_path: Path, dataset_dir: Path):
             raw_img = cv2.imdecode(img_arr, cv2.IMREAD_UNCHANGED)
             cv2.imwrite(str(img_dir / filename), raw_img)
 
-        # 2. Rasterize and Save the Mask (polygons + RLE brushes)
+        # 2. Rasterize and Save the Mask (polygons + RLE brushes + ellipses + rectangles)
         mask = np.zeros((h, w), dtype=np.uint8)
         for item in annotation_results:
             item_type = item.get("type")
+            val = item.get("value", {})
             if item_type == "polygonlabels":
-                points = item["value"]["points"]
-                pts_px = np.array(
-                    [[round(pt[0] * w / 100.0), round(pt[1] * h / 100.0)] for pt in points],
-                    dtype=np.int32,
-                )
-                cv2.fillPoly(mask, [pts_px], 255)
+                points = val.get("points", [])
+                if len(points) >= 3:
+                    pts_px = np.array(
+                        [[round(pt[0] * w / 100.0), round(pt[1] * h / 100.0)] for pt in points],
+                        dtype=np.int32,
+                    )
+                    cv2.fillPoly(mask, [pts_px], 255)
             elif item_type == "brushlabels":
-                rle = item["value"]["rle"]
-                brush_mask = decode_rle_brush(rle, h, w)
-                mask = np.maximum(mask, brush_mask)
+                rle = val.get("rle")
+                if rle:
+                    brush_mask = decode_rle_brush(rle, h, w)
+                    mask = np.maximum(mask, brush_mask)
+            elif item_type == "ellipselabels":
+                x_pct = val.get("x", 0.0)
+                y_pct = val.get("y", 0.0)
+                rx_pct = val.get("radiusX", 0.0)
+                ry_pct = val.get("radiusY", 0.0)
+                rot = val.get("rotation", 0.0)
+                cx = (x_pct + rx_pct) * w / 100.0
+                cy = (y_pct + ry_pct) * h / 100.0
+                rx = rx_pct * w / 100.0
+                ry = ry_pct * h / 100.0
+                if rx > 0 and ry > 0:
+                    cv2.ellipse(
+                        mask,
+                        (int(round(cx)), int(round(cy))),
+                        (int(round(rx)), int(round(ry))),
+                        rot,
+                        0,
+                        360,
+                        255,
+                        -1,
+                    )
+            elif item_type == "rectanglelabels":
+                x_pct = val.get("x", 0.0)
+                y_pct = val.get("y", 0.0)
+                w_pct = val.get("width", 0.0)
+                h_pct = val.get("height", 0.0)
+                rot = val.get("rotation", 0.0)
+                x1 = round(x_pct * w / 100.0)
+                y1 = round(y_pct * h / 100.0)
+                w_box = round(w_pct * w / 100.0)
+                h_box = round(h_pct * h / 100.0)
+                if rot == 0.0:
+                    cv2.rectangle(
+                        mask, (int(x1), int(y1)), (int(x1 + w_box), int(y1 + h_box)), 255, -1
+                    )
+                else:
+                    rect = ((x1 + w_box / 2.0, y1 + h_box / 2.0), (w_box, h_box), rot)
+                    box = np.int32(cv2.boxPoints(rect))
+                    cv2.fillPoly(mask, [box], 255)
 
         cv2.imwrite(str(mask_dir / filename), mask)
         count += 1
