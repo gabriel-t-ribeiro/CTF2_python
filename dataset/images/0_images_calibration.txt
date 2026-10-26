@@ -1,0 +1,40 @@
+============================================================
+CTF2 Two-Phase Flow Pixel Scale Calibration Report
+============================================================
+Folder Name       : images
+Reference Image   : frame_0016.png
+Image Dimensions  : 891 x 328 px
+Generated On      : 2026-09-08 16:49:28
+------------------------------------------------------------
+Point 1 (x, y)    : (427.96, 327.00) px
+Point 2 (x, y)    : (427.96, 0.00) px
+Pixel Distance    : 327.00 px
+Line Orientation  : 90.00 deg from horizontal (dx: 0.00 px, dy: -327.00 px)
+------------------------------------------------------------
+Physical Dimension: 20.0000 mm (0.020000 m)
+Pixel Size (SI)   : 6.116208e-05 m/px
+Pixel Size        : 0.061162 mm/px (61.16 um/px)
+Optical Scale     : 16.3500 px/mm
+============================================================
+
+# MACHINE-READABLE CALIBRATION PARAMETERS
+folder_name=images
+reference_image=frame_0016.png
+image_width_px=891
+image_height_px=328
+point1_x=427.96
+point1_y=327.00
+point2_x=427.96
+point2_y=0.00
+dx_px=0.0000
+dy_px=-327.0000
+angle_deg=-90.00
+angle_from_horizontal_deg=90.00
+distance_px=327.0000
+diameter_real=20.000000
+diameter_unit=mm
+diameter_m=2.000000e-02
+pixel_size_m=6.116208e-05
+pixel_size_mm=0.061162
+pixels_per_mm=16.350000
+timestamp=2026-09-08 16:49:28

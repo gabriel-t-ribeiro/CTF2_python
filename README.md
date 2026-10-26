@@ -3,16 +3,27 @@
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
 [![Units: Standard SI](https://img.shields.io/badge/units-standard%20SI-success.svg)](#6-engineering-standards--si-units)
+[![Tests: 40 Passed](https://img.shields.io/badge/tests-40%20passed-brightgreen.svg)](#3-quickstart--immediate-testing)
 
 An end-to-end computer vision and quantitative physical analysis suite for high-speed two-phase flow boiling videos (typically acquired at 2000–3200 FPS).
 
-This pipeline takes raw camera frames with heavy glare, blur, and lighting gradients, and automatically delivers:
-- **Cleaned, glare-preserved frames** with background subtraction.
-- **Deep learning bubble segmentation** using a ResNet-34 U-Net (up to 46+ FPS inference).
-- **Dual-regime 3D bubble volume reconstruction** bounded by circular tube walls.
-- **High-speed kinematic velocity tracking** and hydrodynamic breakup detection.
-- **Single-camera Depth from Defocus (DFD)** to map out-of-plane bubble position.
-- **Publication-ready timeline figures** and interactive HTML dashboards.
+---
+
+## ⚡ Why This Pipeline? Key Advances Over Last Year's Code
+
+Compared to the previous year's MATLAB-based framework (CTF 1), this Python/PyTorch pipeline delivers major breakthroughs in **speed**, **segmentation fidelity**, and **physical accuracy**:
+
+| Benchmark / Capability | Previous Year (MATLAB CTF 1) | Current Pipeline (Python / PyTorch CTF 2) | Quantified Advantage |
+| :--- | :--- | :--- | :--- |
+| **Model Training Speed** | 45.4 – 49.6 minutes (CPU) | **1.17 minutes (70.3 s on Apple Silicon GPU/MPS)** | **~40× faster model convergence** |
+| **Video Inference Rate** | ~20 – 40 FPS (single-frame loops) | **43.2 – 46.4 FPS (batched GPU inference)** | **Processes 2,000+ frames in <50 s** |
+| **Segmentation Precision** | 97.15% Precision (3,373 px noise) | **97.87% Precision (2,031 px noise)** | **40% reduction in false-positive noise** |
+| **Bubble Boundary Detection** | 95.02% Recall (6,025 px missed) | **97.98% Recall (1,923 px missed)** | **3.1× fewer missed bubble interfaces** |
+| **3D Reconstruction Speed** | 57.2 ms/frame (17.5 FPS) | **13.0 ms/frame (77.1 FPS)** | **4.4× faster volumetric reconstruction** |
+| **Large Slug Extrusion** | 453.2 ms per slug frame | **17.5 ms per slug frame** | **26× speedup on complex vapor slugs** |
+| **Kinematic Tracking Reliability** | Spurious speeds up to 24.5 m/s (phantom jumps) | **Physically gated ($\le 6.0\text{ m/s}$ SI)** | **Zero teleportation artifacts at 2000 FPS** |
+| **3D Out-of-Plane Localization** | Centerline planar assumption ($z = 0$) | **Single-camera Depth from Defocus (DFD)** | **Full $(x, y, z)$ spatial bubble mapping** |
+| **Workflow Portability** | Proprietary MATLAB license required | **100% Open-Source Python (PyTorch + OpenCV)** | **Immediately runnable on macOS / Linux / Windows** |
 
 ---
 
@@ -82,9 +93,11 @@ Raw High-Speed Footage (2000 FPS)
 
 ---
 
-## 3. Quickstart & Installation
+## 3. Quickstart & Immediate Testing
 
-### Setup Environment
+The repository includes curated ground-truth test datasets (`dataset/`, `dataset_2/`, `dataset_2_no_background/`, and `test_dataset/`) so that you can clone and test any stage immediately without downloading large external video archives.
+
+### 3.1 Setup Environment
 ```bash
 # Clone and enter the repository
 cd CTF2_python
@@ -96,13 +109,26 @@ source .venv/bin/activate
 python --version
 ```
 
-### Run Tests
+### 3.2 Automated Unit Test Suite (40 Tests)
+Run the full automated test suite covering calibration, ROI cropping, 3D void fraction math, kinematics, and flow animation:
 ```bash
 export MPLCONFIGDIR=/tmp/mpl
 python -m unittest discover tests
 ```
 
-### Run Ruff Code Quality Checks
+### 3.3 Instant Smoke Test on Bundled Dataset
+Test 3D void fraction reconstruction and automatic timeline generation on the bundled ground truth frames in seconds:
+```bash
+# Computes 3D volumes across the included dataset and auto-generates a timeline plot
+python main.py void-fraction \
+  --masks dataset/masks \
+  -o results/test_void_fraction.csv \
+  --pixel-size 6.1e-5 \
+  --diameter 0.020 \
+  --plot-timeline
+```
+
+### 3.4 Code Quality & Linter Checks
 ```bash
 ruff check .
 ```

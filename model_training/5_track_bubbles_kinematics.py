@@ -280,7 +280,7 @@ def run_tracking(
             output_dir=anim_out,
             fps=fps,
             pixel_size_m=pixel_size_m,
-            max_disp_px=max_disp_px,
+            max_disp_px=actual_max_disp_px,
             vector_step_px=vector_step_px,
             playback_fps=playback_fps,
         )

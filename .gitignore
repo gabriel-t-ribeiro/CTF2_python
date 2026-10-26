@@ -24,9 +24,13 @@ ENV/
 .env
 .envrc
 
+# Presentations & Local Keynotes
+*.key
+*.pptx
+
 # Datasets & Frame Sequences
-dataset/
-images/
+# Keep test and ground-truth sample datasets tracked for immediate testing
+/images/
 segmented_masks/
 generated_masks/
 *.png
@@ -37,6 +41,11 @@ generated_masks/
 !0_docs/assets/*
 0_docs/assets/.obsidian/
 !ctf2_report/assets/*
+!dataset/**
+!dataset_2/**
+!dataset_2_no_background/**
+!test_dataset/**
+**/.DS_Store
 
 
 # Model Weights
