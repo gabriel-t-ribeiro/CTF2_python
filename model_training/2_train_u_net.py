@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 import argparse
+import csv
 from pathlib import Path
 
 import albumentations as A
 import cv2
+import matplotlib.pyplot as plt
 import numpy as np
 import segmentation_models_pytorch as smp
 import torch
@@ -89,6 +91,8 @@ def train(
     batch_size: int,
     lr: float,
     num_workers: int = 0,
+    plot_path: Path | None = None,
+    csv_metrics_path: Path | None = None,
 ):
     train_transform = A.Compose(
         [
@@ -185,6 +189,13 @@ def train(
     best_loss = float("inf")
     output_model.parent.mkdir(parents=True, exist_ok=True)
 
+    history = {
+        "epoch": [],
+        "train_loss": [],
+        "val_loss": [],
+        "epoch_time": [],
+    }
+
     for epoch in range(1, epochs + 1):
         epoch_start = time.perf_counter()
         model.train()
@@ -217,6 +228,11 @@ def train(
         val_loss /= len(val_dataset)
         epoch_duration = time.perf_counter() - epoch_start
 
+        history["epoch"].append(epoch)
+        history["train_loss"].append(train_loss)
+        history["val_loss"].append(val_loss)
+        history["epoch_time"].append(epoch_duration)
+
         print(
             f"Epoch [{epoch:02d}/{epochs}] - Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f} | Time: {epoch_duration:.2f}s"
         )
@@ -232,6 +248,134 @@ def train(
         f"({total_training_time / epochs:.2f}s/epoch, "
         f"{total_training_time / (epochs * len(train_dataset)):.4f}s/sample)"
     )
+
+    if csv_metrics_path:
+        csv_metrics_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(csv_metrics_path, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(["epoch", "train_loss", "val_loss", "epoch_time_seconds"])
+            for e, tl, vl, t_dur in zip(
+                history["epoch"],
+                history["train_loss"],
+                history["val_loss"],
+                history["epoch_time"],
+            ):
+                writer.writerow([e, f"{tl:.6f}", f"{vl:.6f}", f"{t_dur:.4f}"])
+        print(f"[METRICS] Saved training history CSV to: {csv_metrics_path}")
+
+    if plot_path:
+        plot_path.parent.mkdir(parents=True, exist_ok=True)
+        plot_training_curve(history, plot_path, total_training_time, epochs, lr, device)
+
+
+def plot_training_curve(
+    history: dict, plot_path: Path, total_time: float, epochs: int, lr: float, device: torch.device
+):
+    """
+    Renders an publication-quality training & validation loss graph.
+    Combines modern styling with side panel summary metrics.
+    """
+    epochs_range = history["epoch"]
+    train_loss = history["train_loss"]
+    val_loss = history["val_loss"]
+
+    fig = plt.figure(figsize=(12, 6), dpi=300)
+    gs = fig.add_gridspec(1, 2, width_ratios=[3.2, 1.0], wspace=0.15)
+    ax_plot = fig.add_subplot(gs[0])
+    ax_info = fig.add_subplot(gs[1])
+
+    # Plot Curves
+    ax_plot.plot(
+        epochs_range,
+        train_loss,
+        color="#1f77b4",
+        linewidth=2.2,
+        label="Training Loss (Dice + BCE)",
+        alpha=0.95,
+    )
+    ax_plot.plot(
+        epochs_range,
+        val_loss,
+        color="#ff7f0e",
+        linewidth=2.4,
+        label="Validation Loss (Dice + BCE)",
+        marker="o",
+        markersize=4.5,
+        markevery=max(1, epochs // 10),
+    )
+
+    # Best validation point highlight
+    min_val_idx = int(np.argmin(val_loss))
+    best_val_epoch = epochs_range[min_val_idx]
+    best_val = val_loss[min_val_idx]
+    ax_plot.scatter(
+        [best_val_epoch],
+        [best_val],
+        color="#d62728",
+        s=70,
+        zorder=5,
+        label=f"Best Val: {best_val:.4f} (Epoch {best_val_epoch})",
+    )
+
+    ax_plot.set_title(
+        "U-Net ResNet-34 Training & Validation Convergence", fontsize=14, fontweight="bold", pad=12
+    )
+    ax_plot.set_xlabel("Epoch", fontsize=12, labelpad=8)
+    ax_plot.set_ylabel("Loss (DiceBCE)", fontsize=12, labelpad=8)
+    ax_plot.set_xlim(1, epochs)
+    ax_plot.grid(True, linestyle="--", alpha=0.5, color="#cccccc")
+    ax_plot.legend(
+        frameon=True, facecolor="white", edgecolor="#e0e0e0", fontsize=10, loc="upper right"
+    )
+    ax_plot.spines["top"].set_visible(False)
+    ax_plot.spines["right"].set_visible(False)
+
+    # Info Side Panel
+    ax_info.axis("off")
+    info_text = (
+        "TRAINING SUMMARY\n"
+        "────────────────────────\n"
+        f"Status: Completed\n"
+        f"Epochs: {epochs}\n"
+        f"Learning Rate: {lr}\n"
+        f"Hardware: {device.type.upper()}\n"
+        f"Elapsed Time: {total_time:.1f}s\n"
+        f"Avg Time/Epoch: {total_time / epochs:.2f}s\n"
+        "────────────────────────\n"
+        "LOSS PERFORMANCE\n"
+        "────────────────────────\n"
+        f"Final Train Loss: {train_loss[-1]:.4f}\n"
+        f"Final Val Loss:   {val_loss[-1]:.4f}\n"
+        f"Best Val Loss:    {best_val:.4f}\n"
+        f"Best Epoch:       {best_val_epoch}\n"
+        "────────────────────────\n"
+        "ARCHITECTURE\n"
+        "────────────────────────\n"
+        "Model: U-Net\n"
+        "Encoder: ResNet-34\n"
+        "Pretrained: ImageNet\n"
+        "Channels: 1 (Grayscale)\n"
+    )
+    ax_info.text(
+        0.05,
+        0.95,
+        info_text,
+        transform=ax_info.transAxes,
+        fontsize=9.5,
+        family="monospace",
+        verticalalignment="top",
+        bbox={
+            "boxstyle": "round,pad=0.8",
+            "facecolor": "#f8f9fa",
+            "edgecolor": "#dcdcdc",
+            "linewidth": 1.2,
+        },
+    )
+
+    plt.tight_layout()
+    fig.savefig(plot_path, bbox_inches="tight")
+    plt.close(fig)
+    print(f"[PLOT] High-resolution training graph saved to: {plot_path}")
 
 
 if __name__ == "__main__":
@@ -259,6 +403,18 @@ if __name__ == "__main__":
         default=0,
         help="Number of DataLoader worker processes (default: 0 for macOS compatibility)",
     )
+    parser.add_argument(
+        "--plot-path",
+        type=Path,
+        default=None,
+        help="Path where training/validation convergence curve PNG will be saved",
+    )
+    parser.add_argument(
+        "--csv-metrics",
+        type=Path,
+        default=None,
+        help="Path where training/validation loss per epoch CSV will be saved",
+    )
     args = parser.parse_args()
 
     train(
@@ -268,4 +424,6 @@ if __name__ == "__main__":
         args.batch_size,
         args.lr,
         num_workers=args.num_workers,
+        plot_path=args.plot_path,
+        csv_metrics_path=args.csv_metrics,
     )

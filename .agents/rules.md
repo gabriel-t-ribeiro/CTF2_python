@@ -22,6 +22,11 @@
 
 - Whenever changes or updates are made to the CTF2 project (report, article, codebase, scripts, or models), a clear summary of those changes **must be logged in the current weekly file** inside the `0_docs/weekly/` folder.
 
+## 2.1 PDF Versioning & Protection Rules (Article & Report)
+
+- **Only `main.pdf` is updated**: Only the root `main.pdf` in `ctf2_article/` or `ctf2_report/` must be generated/updated during compilation.
+- **Strict Protection for Annotated / Review PDFs**: Any version containing notes, professor/advisor comments, annotations, or historical reviews (especially files in folders like `ctf2_checks_report/`, `ctf2_article_past_version_and_reviews/`, or any review-related directories) must **never be modified, replaced, or overwritten**.
+
 ## 3. Grounding & Reference Material
 
 - Always check and reference the documents, PDFs, and notes located in the `/docs` (or reference) folder before proposing architectures or writing code.

@@ -350,6 +350,7 @@ def render_dfd_diagnostic(
     pixel_size_m: float,
     wall_thickness_m: float = 0.003,
     inner_diameter_m: float = 0.020,
+    show_labels: bool = False,
 ):
     """
     Renders publication-grade 2-panel diagnostic figure:
@@ -362,14 +363,43 @@ def render_dfd_diagnostic(
     from matplotlib.patches import Circle
 
     fig, (ax_front, ax_side) = plt.subplots(
-        1, 2, figsize=(11.5, 4.6), dpi=300, gridspec_kw={"width_ratios": [2.3, 1.0]}
+        1, 2, figsize=(11.5, 4.2), dpi=300, gridspec_kw={"width_ratios": [2.25, 1.0]}
     )
 
-    # Panel (a): Front view overlay
+    # Color mapping for statuses
+    status_colors = {
+        "valid": "#00E676",  # Bright green
+        "near_wall_regularized": "#00B0FF",  # Cyan / blue
+        "saturated_rear_wall": "#FF5252",  # Coral / red
+        "unreliable_defocus": "#FF9100",  # Orange
+        "slug_excluded": "#9E9E9E",  # Grey
+    }
+
+    # Soft translucent color tint on bubble silhouettes in front view
+    def hex_to_rgb(hex_str: str) -> tuple[float, float, float]:
+        hex_clean = hex_str.lstrip("#")
+        return tuple(int(hex_clean[i : i + 2], 16) / 255.0 for i in (0, 2, 4))
+
+    status_colors_rgb = {k: hex_to_rgb(v) for k, v in status_colors.items()}
+
+    num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(
+        binary_mask, connectivity=8
+    )
+    res_by_id = {r["bubble_id"]: r for r in results}
+
     if len(raw_img.shape) == 2:
-        ax_front.imshow(raw_img, cmap="gray", aspect="equal")
+        base_rgb = cv2.cvtColor(raw_img, cv2.COLOR_GRAY2RGB).astype(float) / 255.0
     else:
-        ax_front.imshow(cv2.cvtColor(raw_img, cv2.COLOR_BGR2RGB), aspect="equal")
+        base_rgb = cv2.cvtColor(raw_img, cv2.COLOR_BGR2RGB).astype(float) / 255.0
+
+    overlay = base_rgb.copy()
+    for b_id, res in res_by_id.items():
+        st = res["dfd_status"]
+        c_rgb = np.array(status_colors_rgb.get(st, (1.0, 1.0, 1.0)))
+        b_mask = labels == b_id
+        overlay[b_mask] = 0.72 * overlay[b_mask] + 0.28 * c_rgb
+
+    ax_front.imshow(overlay, aspect="equal")
 
     # Draw tube inner walls on front view
     h_img, w_img = raw_img.shape[:2]
@@ -384,21 +414,6 @@ def render_dfd_diagnostic(
     ax_front.axhline(
         pipe_center_y_px, color="#17A2B8", ls=":", lw=1.0, alpha=0.6, label="Tube centerline"
     )
-
-    # Color mapping for statuses
-    status_colors = {
-        "valid": "#00E676",  # Bright green
-        "near_wall_regularized": "#00B0FF",  # Cyan / blue
-        "saturated_rear_wall": "#FF5252",  # Coral / red
-        "unreliable_defocus": "#FF9100",  # Orange
-        "slug_excluded": "#9E9E9E",  # Grey
-    }
-
-    # Overlay bubble contours
-    num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(
-        binary_mask, connectivity=8
-    )
-    res_by_id = {r["bubble_id"]: r for r in results}
 
     for b_id, res in res_by_id.items():
         st = res["dfd_status"]
@@ -416,32 +431,32 @@ def render_dfd_diagnostic(
             for cnt in cnts:
                 pts = cnt.squeeze()
                 if len(pts.shape) == 2:
-                    ax_front.plot(pts[:, 0], pts[:, 1], color=color, lw=1.6)
+                    ax_front.plot(pts[:, 0], pts[:, 1], color=color, lw=1.4)
 
-        # Label card text
-        if st == "slug_excluded":
-            lbl_txt = f"ID {b_id} (Slug)\n[EDT 3D]"
-        elif st == "saturated_rear_wall":
-            lbl_txt = f"ID {b_id}\nSAT: z={z_mm:.1f}mm"
-        elif st == "near_wall_regularized":
-            lbl_txt = f"ID {b_id}\nNear-wall: z={z_mm:.2f}mm"
-        else:
-            lbl_txt = f"ID {b_id}\nz={z_mm:.1f}mm | d={d0_mm:.2f}mm"
+        if show_labels:
+            if st == "slug_excluded":
+                lbl_txt = f"ID {b_id} (Slug)\n[EDT 3D]"
+            elif st == "saturated_rear_wall":
+                lbl_txt = f"ID {b_id}\nSAT: z={z_mm:.1f}mm"
+            elif st == "near_wall_regularized":
+                lbl_txt = f"ID {b_id}\nNear-wall: z={z_mm:.2f}mm"
+            else:
+                lbl_txt = f"ID {b_id}\nz={z_mm:.1f}mm | d={d0_mm:.2f}mm"
 
-        ax_front.text(
-            cx,
-            cy,
-            lbl_txt,
-            ha="center",
-            va="center",
-            fontsize=6.8,
-            fontweight="bold",
-            color=color,
-            path_effects=[pe.withStroke(linewidth=2.0, foreground="#000000")],
-        )
+            ax_front.text(
+                cx,
+                cy,
+                lbl_txt,
+                ha="center",
+                va="center",
+                fontsize=6.8,
+                fontweight="bold",
+                color=color,
+                path_effects=[pe.withStroke(linewidth=2.0, foreground="#000000")],
+            )
 
     ax_front.set_title(
-        r"$\mathbf{(a)}$ Front Projection ($x-y$): DFD Sizing & Reliability Status",
+        r"$\mathbf{(a)}$ Front Projection ($x-y$): DFD Reliability Classification",
         fontsize=9.5,
         color="#1B365D",
     )
@@ -502,19 +517,29 @@ def render_dfd_diagnostic(
         d0_mm = float(res.get("diameter_d0_m", 0.0)) * 1e3
         r0_mm = max(0.3, d0_mm / 2.0)
 
-        # Scale and clamp visual circle patch so it remains strictly inside tube bounds
-        if z_chord_half_mm > 0.05:
-            r0_plot_mm = min(r0_mm, max(0.15, z_chord_half_mm * 0.85))
-            z_min_mm = z_front_inner_mm + r0_plot_mm
-            z_max_mm = z_rear_inner_mm - r0_plot_mm
-            if z_min_mm <= z_max_mm:
-                z_bubble_mm = float(np.clip(z_front_inner_mm + z_fluid_mm, z_min_mm, z_max_mm))
-            else:
-                z_bubble_mm = z_center_mm
-                r0_plot_mm = max(0.15, z_chord_half_mm * 0.85)
-        else:
+        # Optical depth coordinate
+        if st == "slug_excluded":
             z_bubble_mm = z_center_mm
-            r0_plot_mm = 0.15
+        else:
+            z_bubble_raw_mm = z_front_inner_mm + z_fluid_mm
+            z_bubble_mm = float(
+                np.clip(z_bubble_raw_mm, z_front_inner_mm + 0.15, z_rear_inner_mm - 0.15)
+            )
+
+        # Check distance from tube center (z_center_mm, 0.0)
+        dist_from_tube_center = np.sqrt((z_bubble_mm - z_center_mm) ** 2 + y_elev_clamped_mm**2)
+        max_allowed_center_dist = r_tube_mm - 0.25
+        if dist_from_tube_center > max_allowed_center_dist:
+            scale_center = max_allowed_center_dist / dist_from_tube_center
+            z_bubble_mm = z_center_mm + (z_bubble_mm - z_center_mm) * scale_center
+            y_elev_clamped_mm = y_elev_clamped_mm * scale_center
+            dist_from_tube_center = max_allowed_center_dist
+
+        # Compute exact radial clearance to the circular tube wall
+        radial_clearance_mm = max(0.18, r_tube_mm - dist_from_tube_center)
+
+        # Scale visual patch radius so it remains strictly inside tube bounds in all directions
+        r0_plot_mm = min(r0_mm, max(0.18, radial_clearance_mm * 0.92))
 
         # Plot circle representing bubble
         c_patch = Circle(
@@ -526,17 +551,18 @@ def render_dfd_diagnostic(
             alpha=0.85,
         )
         ax_side.add_patch(c_patch)
-        ax_side.text(
-            z_bubble_mm,
-            y_elev_clamped_mm,
-            str(b_id),
-            ha="center",
-            va="center",
-            fontsize=6.5,
-            fontweight="bold",
-            color="#FFFFFF",
-            path_effects=[pe.withStroke(linewidth=1.8, foreground="#000000")],
-        )
+        if show_labels:
+            ax_side.text(
+                z_bubble_mm,
+                y_elev_clamped_mm,
+                str(b_id),
+                ha="center",
+                va="center",
+                fontsize=6.5,
+                fontweight="bold",
+                color="#FFFFFF",
+                path_effects=[pe.withStroke(linewidth=1.8, foreground="#000000")],
+            )
 
     ax_side.set_title(r"$\mathbf{(b)}$ Transverse Profile ($z-y$)", fontsize=9.5, color="#1B365D")
     ax_side.set_xlabel("Optical depth $z$ [mm]")
@@ -544,6 +570,8 @@ def render_dfd_diagnostic(
     ax_side.set_xlim(-1.0, wall_mm * 2 + d_tube_mm + 1.0)
     ax_side.set_ylim(-r_tube_mm - wall_mm - 1.0, r_tube_mm + wall_mm + 1.0)
     ax_side.grid(True, ls=":", alpha=0.4)
+    ax_side.set_box_aspect(1)
+    ax_side.set_aspect("equal", adjustable="box")
 
     # Add custom legend
     from matplotlib.lines import Line2D
