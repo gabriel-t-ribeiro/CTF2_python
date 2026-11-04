@@ -76,6 +76,9 @@ python main.py calibrate -i path/to/raw_images --size-mm 20.0
 python image_scripts/calibrate_pixel_size.py -i path/to/raw_images -smm 20.0
 ```
 
+> **Downstream Integration & Centerline Calibration**:
+> Calibration produces a machine-readable report named `0_<folder>_calibration.txt`. In addition to `pixel_size_m` and `diameter_m`, it records the vertical coordinates of the tube boundaries (`point1_y`, `point2_y`) and native image dimensions. Downstream tools (`main.py void-fraction`, `main.py animate-3d`) use these points to compute the exact physical channel centerline ($y_{\text{center}} = (y_{\text{top}} + y_{\text{bot}})/2$). This ensures that even if binary masks are later padded or resized, 3D bubble geometries remain strictly centered and enclosed inside the conduit.
+
 ---
 
 ### Step 0: Conduit ROI Cropping (`0_roi_crop.py`)

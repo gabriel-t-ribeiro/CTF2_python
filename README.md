@@ -150,7 +150,8 @@ The root `main.py` provides a single entrypoint for every stage of the pipeline:
 | `main.py track` | Bubble velocity vectors and breakup events | `--masks`, `-o`, `--fps 2000`, `--pixel-size 6.1e-5`, `--v-max 6.0` |
 | `main.py animate-flow` | Slow-motion velocity vector animation (MP4 / GIF) | `--masks`, `-i`, `-o`, `--fps 2000`, `--playback-fps 5.0` |
 | `main.py dfd` | Single-camera Depth from Defocus ($z$-position & sizing) | `--images`, `--masks`, `-o`, `--beta-eff 2000.0` |
-| `main.py render` | 3D flow field visualization & Three.js WebGL HTML | `--mask`, `--output-png`, `--output-html` |
+| `main.py render` | 3D single-frame flow visualization & WebGL HTML | `--mask`, `--output-png`, `--output-html` |
+| `main.py animate-3d` | 3D dynamic animated WebGL player across continuous sequence | `--masks`, `--calib-file`, `-o`, `--fps 2000`, `--max-frames 375` |
 
 ---
 
@@ -208,15 +209,29 @@ python main.py plot-vf \
   --html results/void_fraction_comparison.html
 ```
 
+### Recipe 4: Interactive 3D Flow Animation Reconstruction (`main.py animate-3d`)
+
+Reconstructs continuous multi-frame 3D flow animations into a zero-dependency standalone HTML WebGL viewer with play/pause, scrubbers, OrbitControls, and real-time physical telemetry:
+
+```bash
+python main.py animate-3d \
+  --masks images/background1/labelled_nbc_1 \
+  --calib-file images/background1/divergente_40kHz/0_divergente_40kHz_calibration.txt \
+  --output-html results/w45_3d_flow_animation_divergente_nobg/interactive_3d_flow_viewer.html \
+  --max-frames 375 \
+  --fps 2000.0 \
+  --title "3D Flow Animation - Divergente 40kHz"
+```
+
 ---
 
-## 6. Engineering Standards & SI Units
+## 6. Engineering Standards, SI Units & Calibration Guardrails
 
 All calculations and pipeline outputs strictly adhere to standard SI units:
 
 | Physical Quantity | SI Unit | Code Argument / Variable | Typical Experimental Value |
 |:---|:---|:---|:---|
-| Optical Scale | $\text{m/px}$ | `--pixel-size`, `pixel_size_m` | $6.1\times 10^{-5}\text{ m/px}$ ($0.061\text{ mm/px}$) |
+| Optical Scale | $\text{m/px}$ | `--pixel-size`, `pixel_size_m` | $5.17\times 10^{-5}\text{ to }6.12\times 10^{-5}\text{ m/px}$ |
 | Conduit Diameter | $\text{m}$ | `--diameter`, `diameter_m` | $0.020\text{ m}$ ($20\text{ mm}$) |
 | Gas Volume | $\text{m}^3$ | `gas_volume_m3` | $10^{-7} - 10^{-4}\text{ m}^3$ |
 | Void Fraction ($\alpha$) | dimensionless | `void_fraction_alpha` | $0.0 - 1.0$ |
@@ -225,6 +240,11 @@ All calculations and pipeline outputs strictly adhere to standard SI units:
 | Optical Defocus Constant | $\text{px/m}$ | `--beta-eff`, `beta_eff` | $1000 - 5000\text{ px/m}$ |
 
 > **Unit Safety Guardrail**: Inputs mistakenly passed in millimeters (such as `--diameter 20.0`) are automatically detected and converted to meters ($0.020\text{ m}$).
+
+### ⚠️ Calibration & Spatial Alignment Note (Avoid Volume Overflow)
+- **Optical Zoom Variations**: Different camera lenses and zoom setups yield distinct pixel scales (e.g. `divergente_40kHz` is $19.3223\text{ px/mm} = 5.175358\times 10^{-5}\text{ m/px}$, whereas the benchmark dataset is $16.3500\text{ px/mm} = 6.116208\times 10^{-5}\text{ m/px}$).
+- **Canvas Padding vs. Conduit Centerline**: In padded or cropped image sequences (e.g., $417\times 920\text{ px}$ masks produced from $392\times 914\text{ px}$ footage), the geometric canvas center ($h/2 = 208.5\text{ px}$) does **not** match the physical tube centerline ($y \approx 194.2\text{ px}$). Assuming $h/2$ shifts the bubble geometry upward and causes volume to breach the top wall of the tube.
+- **Best Practice**: Always pass `--calib-file <path>/0_*_calibration.txt` to CLI commands (`animate-3d`, `void-fraction`, etc.). The pipeline parses the true measured top/bottom walls (`point1_y`, `point2_y`) to automatically center the conduit and strictly enforces the cylindrical physical boundary ($y^2 + z^2 \le R^2$).
 
 ---
 

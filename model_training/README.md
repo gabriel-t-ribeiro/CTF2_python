@@ -57,6 +57,7 @@ model_training/
 ├── 6_depth_from_defocus.py        # Step 7: Single-camera DFD depth and bubble sizing analysis
 ├── render_3d_flow.py              # Step 8: Publication 3D flow renders & WebGL HTML
 ├── plot_void_fraction_timeline.py # Step 9: Publication timeline plots & interactive HTML
+├── render_3d_flow_animation.py    # Step 10: Multi-frame animated 3D WebGL player
 ├── visualize_flow_animation.py    # Tool: Generate slow-motion MP4/GIF animations
 ├── project_export.json            # Sample verified Label Studio ground-truth export
 └── README.md
@@ -278,3 +279,38 @@ Key features:
 - Statistical confidence envelope ($\pm 1\sigma$ band).
 - Multi-panel mode displaying $\alpha(t)$, gas volume ($mm^3$), and void distribution histograms.
 - Comparative multi-run overlays on a common physical time axis.
+
+---
+
+### Step 10: Interactive 3D Flow Animation Player (`render_3d_flow_animation.py`)
+Reconstructs dynamic, multi-frame 3D flow animations across high-speed sequences into a standalone, zero-dependency HTML WebGL player:
+
+```bash
+# Via Unified CLI:
+python main.py animate-3d \
+  --masks images/background1/labelled_nbc_1 \
+  --calib-file images/background1/divergente_40kHz/0_divergente_40kHz_calibration.txt \
+  --output-html results/w45_3d_flow_animation_divergente_nobg/interactive_3d_flow_viewer.html \
+  --max-frames 375 \
+  --fps 2000.0 \
+  --slug-step 6 \
+  --title "3D Flow Animation - Divergente 40kHz"
+```
+
+| Flag | Purpose | Default |
+|:---|:---|:---|
+| `--masks`, `-m` | Directory containing binary masks (*.png) | *Required* |
+| `--output-html`, `-o` | Standalone output HTML file path | `results/w45_3d_flow_animation/interactive_3d_flow_viewer.html` |
+| `--calib-file`, `-c` | Optical calibration report (`0_*_calibration.txt`) | Optional (auto-loaded) |
+| `--fps` | High-speed acquisition frame rate in Hz | `2000.0` |
+| `--max-frames` | Maximum number of continuous frames to reconstruct | `120` |
+| `--stride`, `-s` | Frame evaluation stride | `1` (continuous) |
+| `--slug-step` | 3D mesh grid subsampling step for large vapor slugs | `6 px` |
+| `--y-center` | Vertical channel centerline coordinate in pixels | Midpoint of `point1_y` & `point2_y` |
+
+#### Key Features & Calibration Guardrails:
+* **Interactive Player Controls**: Play/Pause, speed selector ($0.25\times$ to $10\times$), frame scrubber, loop toggle, and camera view presets (Isometric, Side $X\text{-}Y$, Top $X\text{-}Z$, Cross-Section $Z\text{-}Y$).
+* **HUD Telemetry**: Live frame index, physical timestamp ($t$ in ms), void fraction ($\alpha$), active bubble count, instantaneous gas volume ($mm^3$), and total conduit volume.
+* **Presentation Theme Toggle**: Easily switch between dark mode and clean white background mode for thesis presentations and papers.
+* **Strict Conduit Enclosure**: Enforces mathematical containment ($y^2 + z^2 \le R^2$) so that segmentation artifacts or image boundary noise never protrude outside the cylindrical tube.
+* **Calibration File Auto-Alignment**: When `--calib-file` is passed, the exact optical scale ($m/\text{px}$) and true physical centerline ($y_{\text{center}} = (y_{\text{top}} + y_{\text{bot}})/2$) are resolved from the calibration report, completely preventing vertical volume offset when working with padded mask images.
