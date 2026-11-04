@@ -34,6 +34,7 @@ def reconstruct_3d_bubbles_si(
     area_thresh_px: float = 5000.0,
     smoothing_lambda_px: float = 0.15,
     dfd_records: list[dict[str, Any]] | None = None,
+    y_center_px: float | None = None,
 ) -> dict[str, Any]:
     """
     Reconstructs 3D bubble volumes from a 2D binary mask strictly in SI units.
@@ -44,6 +45,8 @@ def reconstruct_3d_bubbles_si(
         pipe_dia_m: Channel internal diameter in meters (default: 0.020 m = 20.0 mm).
         area_thresh_px: Threshold area in pixels distinguishing small vs large bubbles (default 5000 px).
         smoothing_lambda_px: Laplacian boundary smoothing factor (default 0.15).
+        dfd_records: Optional single-camera DFD depth estimates.
+        y_center_px: Optional optical channel centerline coordinate in pixels.
 
     Returns:
         Dictionary containing reconstructed volumes, geometries, and void fraction in SI units.
@@ -56,8 +59,9 @@ def reconstruct_3d_bubbles_si(
     pipe_length_m = w_px * pixel_size_m
     v_pipe_m3 = np.pi * (pipe_radius_m**2) * pipe_length_m
 
-    # Pixel coordinate scale
-    y_center_px = h_px / 2.0
+    # Pixel coordinate scale (centered vertically by default or calibration axis)
+    if y_center_px is None:
+        y_center_px = h_px / 2.0
     y_center_m = y_center_px * pixel_size_m
 
     # Scale-consistent SI smoothing parameter: lambda_si * D_si = lambda_px * D_px
@@ -416,6 +420,7 @@ def extract_slug_mesh_data(
     pixel_size_m: float,
     y_center_px: float,
     step: int = 3,
+    pipe_radius_m: float | None = None,
 ) -> dict[str, Any]:
     """
     Constructs a watertight 3D surface mesh (vertices and triangle indices)
@@ -446,9 +451,19 @@ def extract_slug_mesh_data(
                 # X: flow axis (meters)
                 # Y: vertical buoyancy axis (meters, centered at tube midplane)
                 # Z: depth axis (meters, perpendicular to viewing plane, centered at 0)
-                x_m = round(float(c * pixel_size_m), 6)
-                y_m = round(float((y_center_px - r) * pixel_size_m), 6)
-                z_depth = round(float(depth_map_m[r, c]), 6)
+                x_m = float(c * pixel_size_m)
+                y_m = float((y_center_px - r) * pixel_size_m)
+                z_depth = float(depth_map_m[r, c])
+
+                # Physical containment guardrail: strictly enforce cylindrical pipe envelope
+                if pipe_radius_m is not None and pipe_radius_m > 0:
+                    y_m = float(np.clip(y_m, -pipe_radius_m, pipe_radius_m))
+                    z_chord_limit = float(np.sqrt(max(0.0, pipe_radius_m**2 - y_m**2)))
+                    z_depth = min(z_depth, z_chord_limit)
+
+                x_m = round(x_m, 6)
+                y_m = round(y_m, 6)
+                z_depth = round(z_depth, 6)
 
                 # Top vertex (+z_depth)
                 vertices.extend([x_m, y_m, z_depth])

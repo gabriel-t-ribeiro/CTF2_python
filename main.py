@@ -263,6 +263,81 @@ def main():
         help="Fixed max speed in m/s for colormap normalization (default: 95th percentile)",
     )
 
+    # Subcommand: animate-3d
+    p_3d_anim = subparsers.add_parser(
+        "animate-3d",
+        help="Generate 3D animated WebGL flow reconstruction across time in SI units",
+    )
+    p_3d_anim.add_argument(
+        "--masks", "-m", type=Path, required=True, help="Folder containing binary masks"
+    )
+    p_3d_anim.add_argument(
+        "--output-html",
+        "-o",
+        type=Path,
+        default=Path("results/w45_3d_flow_animation/interactive_3d_flow_viewer.html"),
+        help="Output standalone HTML interactive 3D WebGL player",
+    )
+    p_3d_anim.add_argument(
+        "--fps", type=float, default=2000.0, help="Camera frame rate in Hz (default: 2000)"
+    )
+    p_3d_anim.add_argument(
+        "--pixel-size",
+        type=float,
+        default=None,
+        help="Pixel scale in m/px (SI). If omitted, parsed from 0_*_calibration.txt",
+    )
+    p_3d_anim.add_argument(
+        "--diameter",
+        type=float,
+        default=0.020,
+        help="Conduit internal diameter in meters (default: 0.020 m)",
+    )
+    p_3d_anim.add_argument(
+        "--start-frame",
+        type=int,
+        default=0,
+        help="Starting frame index (default: 0)",
+    )
+    p_3d_anim.add_argument(
+        "--max-frames",
+        type=int,
+        default=120,
+        help="Maximum frames to reconstruct in 3D (default: 120)",
+    )
+    p_3d_anim.add_argument(
+        "--stride",
+        "-s",
+        type=int,
+        default=1,
+        help="Frame evaluation stride (default: 1)",
+    )
+    p_3d_anim.add_argument(
+        "--slug-step",
+        type=int,
+        default=6,
+        help="Sampling step for 3D slug mesh grid (default: 6 px)",
+    )
+    p_3d_anim.add_argument(
+        "--title",
+        type=str,
+        default="3D Multi-Phase Bubble Flow Animation",
+        help="Header title for the 3D HTML viewer",
+    )
+    p_3d_anim.add_argument(
+        "--calib-file",
+        "-c",
+        type=Path,
+        default=None,
+        help="Path to calibration file (*calibration.txt) to automatically resolve pixel size, pipe diameter, and vertical channel centerline",
+    )
+    p_3d_anim.add_argument(
+        "--y-center",
+        type=float,
+        default=None,
+        help="Explicit channel centerline vertical coordinate in pixels (defaults to mask center or calibrated midpoint)",
+    )
+
     # Subcommand: dfd
     p_dfd = subparsers.add_parser(
         "dfd", help="Perform single-camera Depth from Defocus (DFD) analysis"
@@ -744,6 +819,25 @@ def main():
             v_max_override=args.vmax,
             max_html_frames=args.max_html_frames,
             save_individual_frames=args.save_frames,
+        )
+
+    elif args.command == "animate-3d":
+        if args.calib_file is None:
+            _resolve_auto_calibration(args, args.masks)
+        mod = importlib.import_module("model_training.render_3d_flow_animation")
+        mod.process_sequence_3d(
+            mask_dir=args.masks,
+            output_html_path=args.output_html,
+            pixel_size_m=args.pixel_size,
+            pipe_dia_m=args.diameter,
+            fps=args.fps,
+            start_frame=args.start_frame,
+            max_frames=args.max_frames,
+            stride=args.stride,
+            slug_mesh_step=args.slug_step,
+            title=args.title,
+            calib_file=args.calib_file,
+            y_center_px=args.y_center,
         )
 
     elif args.command == "dfd":
