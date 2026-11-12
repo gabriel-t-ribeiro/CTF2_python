@@ -4,6 +4,7 @@ Create dataset_2 using original background images from images/background1/diverg
 paired with pixel-aligned ground truth masks from dataset_2_no_background/masks/.
 """
 
+import argparse
 import time
 from pathlib import Path
 
@@ -137,12 +138,39 @@ def generate_diagnostic_overlay(
     print(f"[DIAGNOSTIC] Saved verification panel to {output_path}")
 
 
-if __name__ == "__main__":
-    base_dir = Path(__file__).resolve().parent.parent
-    src_images = base_dir / "images" / "background1" / "divergente_40kHz"
-    src_masks = base_dir / "dataset_2_no_background" / "masks"
-    dest_dataset = base_dir / "dataset_2"
+def main(argv: list[str] | None = None) -> None:
+    base_dir = Path(__file__).resolve().parents[1]
+    parser = argparse.ArgumentParser(
+        description="Rebuild dataset_2: raw frames with background paired with aligned masks",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument(
+        "--src-images",
+        type=Path,
+        default=base_dir / "images" / "background1" / "divergente_40kHz",
+        help="Raw frames with background",
+    )
+    parser.add_argument(
+        "--src-masks",
+        type=Path,
+        default=base_dir / "dataset_2_no_background" / "masks",
+        help="Ground-truth masks annotated on the background-removed frames",
+    )
+    parser.add_argument(
+        "--dest", type=Path, default=base_dir / "dataset_2", help="Destination dataset folder"
+    )
+    parser.add_argument(
+        "--diagnostic",
+        type=Path,
+        default=base_dir / "models" / "dataset_2_alignment_verification.png",
+        help="Output path of the alignment verification panel",
+    )
+    args = parser.parse_args(argv)
 
-    stats = create_dataset_2(src_images, src_masks, dest_dataset)
-    diag_path = base_dir / "models" / "dataset_2_alignment_verification.png"
-    generate_diagnostic_overlay(dest_dataset, diag_path)
+    create_dataset_2(args.src_images, args.src_masks, args.dest)
+    args.diagnostic.parent.mkdir(parents=True, exist_ok=True)
+    generate_diagnostic_overlay(args.dest, args.diagnostic)
+
+
+if __name__ == "__main__":
+    main()

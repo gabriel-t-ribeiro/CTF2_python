@@ -19,23 +19,12 @@ from pathlib import Path
 
 
 def _resolve_auto_calibration(args, path: Path):
-    """Auto-detect pixel_size and diameter from calibration file if not explicitly passed."""
-    from image_scripts.calibrate_pixel_size import find_and_load_calibration
+    """Resolve pixel_size (calibration file or --pixel-size; no default) and the tube diameter."""
+    from image_scripts.calibrate_pixel_size import find_and_load_calibration, resolve_pixel_size
 
     cal = find_and_load_calibration(path)
-    if getattr(args, "pixel_size", None) is None:
-        if cal and "pixel_size_m" in cal:
-            args.pixel_size = float(cal["pixel_size_m"])
-            source = cal.get("_file_path", "calibration file")
-            print(
-                f"[CALIBRATION] Auto-loaded optical scale from {source}:\n"
-                f"              pixel_size = {args.pixel_size:.6e} m/px ({args.pixel_size * 1e3:.4f} mm/px)"
-            )
-        else:
-            args.pixel_size = 6.1e-5
-            print(
-                f"[INFO] No calibration file found near '{path}'. Using default pixel_size: {args.pixel_size:.6e} m/px"
-            )
+    if hasattr(args, "pixel_size"):
+        args.pixel_size = resolve_pixel_size(getattr(args, "pixel_size", None), path)
 
     if hasattr(args, "diameter") and getattr(args, "diameter", None) is None:
         if cal and "diameter_m" in cal:
@@ -72,7 +61,7 @@ def main():
         "--pixel-size",
         type=float,
         default=None,
-        help="Pixel size in m/px (SI, default: auto-detected or 6.1e-5 = 0.061 mm/px)",
+        help="Pixel size in m/px. Required unless a 0_*calibration.txt sits next to the input",
     )
     p_vf.add_argument(
         "--diameter",
@@ -125,7 +114,7 @@ def main():
         "--pixel-size",
         type=float,
         default=None,
-        help="Pixel size in m/px (SI, default: auto-detected or 6.1e-5 = 0.061 mm/px)",
+        help="Pixel size in m/px. Required unless a 0_*calibration.txt sits next to the input",
     )
     p_tr.add_argument(
         "--v-max",
@@ -194,7 +183,7 @@ def main():
         "--pixel-size",
         type=float,
         default=None,
-        help="Pixel size in m/px (SI, default: auto-detected or 6.1e-5 = 0.061 mm/px)",
+        help="Pixel size in m/px. Required unless a 0_*calibration.txt sits next to the input",
     )
     p_anim.add_argument(
         "--max-disp",
@@ -339,86 +328,12 @@ def main():
     )
 
     # Subcommand: dfd
-    p_dfd = subparsers.add_parser(
-        "dfd", help="Perform single-camera Depth from Defocus (DFD) analysis"
-    )
-    p_dfd.add_argument(
-        "--images",
-        "-i",
-        type=Path,
-        required=True,
-        help="Folder containing raw flow images",
-    )
-    p_dfd.add_argument(
-        "--masks", "-m", type=Path, required=True, help="Folder containing binary masks"
-    )
-    p_dfd.add_argument(
-        "--output-csv",
-        "-o",
-        type=Path,
-        default=Path("results/dfd_results.csv"),
-        help="Output CSV path",
-    )
-    p_dfd.add_argument(
-        "--pixel-size",
-        type=float,
-        default=None,
-        help="Pixel size in m/px (SI, default: auto-detected or 6.1e-5 = 0.061 mm/px)",
-    )
-    p_dfd.add_argument(
-        "--beta-eff",
-        type=float,
-        default=2000.0,
-        help="Effective DFD calibration in px/m",
-    )
-    p_dfd.add_argument(
-        "--near-wall-threshold",
-        type=float,
-        default=0.05,
-        help="Dimensionless blur threshold (sigma_tilde) for near-wall/near-focus regularization (default: 0.05)",
-    )
-    p_dfd.add_argument(
-        "--max-sigma-threshold",
-        type=float,
-        default=0.35,
-        help="Upper dimensionless blur threshold (sigma_tilde) for DFD validity (default: 0.35)",
-    )
-    p_dfd.add_argument(
-        "--wall-thickness",
-        type=float,
-        default=0.003,
-        help="Borosilicate glass wall thickness in meters (default: 0.003 m = 3.0 mm)",
-    )
-    p_dfd.add_argument(
-        "--diameter",
-        "-d",
-        type=float,
-        default=0.020,
-        help="Channel inner diameter in meters (default: 0.020 m = 20.0 mm)",
-    )
-    p_dfd.add_argument(
-        "--pipe-center-y",
-        type=float,
-        default=None,
-        help="Pipe centerline y [px]",
-    )
-    p_dfd.add_argument(
-        "--render-diagnostic",
-        action="store_true",
-        help="Render publication-grade 2-panel DFD diagnostic visualizations (x-y front view and y-z depth profile)",
-    )
-    p_dfd.add_argument(
-        "--diagnostic-dir",
-        type=Path,
-        default=Path("results/dfd_diagnostics"),
-        help="Output directory for diagnostic visualizations (default: results/dfd_diagnostics)",
-    )
-    p_dfd.add_argument(
-        "--background",
-        "-bg",
-        type=Path,
-        default=None,
-        help="Optional background image for normalization",
+    subparsers.add_parser(
+        "dfd",
+        help="Single-camera Depth from Defocus (DFD) analysis",
+        add_help=False,
+        description="All options are forwarded to model_training/6_depth_from_defocus.py "
+        "(run `python main.py dfd --help` for the full list).",
     )
 
     # Subcommand: render
@@ -440,7 +355,7 @@ def main():
         "--pixel-size",
         type=float,
         default=None,
-        help="Pixel size in m/px (default: auto-detected or 6.1e-5 = 0.061 mm/px)",
+        help="Pixel size in m/px. Required unless a 0_*calibration.txt sits next to the input",
     )
     p_rend.add_argument(
         "--diameter",
@@ -722,7 +637,10 @@ def main():
         help="CLI arguments for recalibration when --on-calibration redo is selected",
     )
 
-    args = parser.parse_args()
+    # `dfd` forwards its options untouched to the DFD module's own parser.
+    args, extra_args = parser.parse_known_args()
+    if extra_args and args.command != "dfd":
+        parser.error(f"unrecognized arguments: {' '.join(extra_args)}")
 
     if not args.command:
         parser.print_help()
@@ -764,7 +682,7 @@ def main():
         )
 
     elif args.command in ("plot-vf", "plot-void-fraction", "plot-timeline"):
-        mod = importlib.import_module("model_training.plot_void_fraction_timeline")
+        mod = importlib.import_module("visualization.plot_void_fraction_timeline")
         html_out = None if args.no_html else args.interactive_html
         mod.run_timeline_pipeline(
             input_paths=args.input,
@@ -801,7 +719,7 @@ def main():
 
     elif args.command in ("animate-flow", "visualize-tracking"):
         _resolve_auto_calibration(args, args.masks)
-        mod = importlib.import_module("model_training.visualize_flow_animation")
+        mod = importlib.import_module("visualization.visualize_flow_animation")
         mod.render_flow_animation(
             image_dir=args.images,
             mask_dir=args.masks,
@@ -824,7 +742,7 @@ def main():
     elif args.command == "animate-3d":
         if args.calib_file is None:
             _resolve_auto_calibration(args, args.masks)
-        mod = importlib.import_module("model_training.render_3d_flow_animation")
+        mod = importlib.import_module("visualization.render_3d_flow_animation")
         mod.process_sequence_3d(
             mask_dir=args.masks,
             output_html_path=args.output_html,
@@ -841,29 +759,14 @@ def main():
         )
 
     elif args.command == "dfd":
-        _resolve_auto_calibration(args, args.images)
         mod = importlib.import_module("model_training.6_depth_from_defocus")
-        mod.run_dfd_pipeline(
-            args.images,
-            args.masks,
-            args.output_csv,
-            pixel_size=args.pixel_size,
-            beta_eff=args.beta_eff,
-            background_path=args.background,
-            near_wall_threshold=args.near_wall_threshold,
-            max_sigma_threshold=args.max_sigma_threshold,
-            wall_thickness_m=args.wall_thickness,
-            inner_diameter_m=args.diameter,
-            pipe_center_y_px=args.pipe_center_y,
-            render_diagnostic=args.render_diagnostic,
-            diagnostic_output_dir=args.diagnostic_dir,
-        )
+        sys.exit(mod.main(extra_args))
 
     elif args.command == "render":
         _resolve_auto_calibration(args, args.mask)
         import cv2
 
-        mod = importlib.import_module("model_training.render_3d_flow")
+        mod = importlib.import_module("visualization.render_3d_flow")
         mask = cv2.imread(str(args.mask), cv2.IMREAD_GRAYSCALE)
         if mask is None:
             raise FileNotFoundError(f"Could not load mask at: {args.mask}")

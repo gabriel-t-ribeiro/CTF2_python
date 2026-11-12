@@ -23,6 +23,7 @@ import base64
 import json
 import os
 import re
+import sys
 import time
 import zlib
 from pathlib import Path
@@ -31,11 +32,13 @@ from typing import Any
 import cv2
 import numpy as np
 
-from image_scripts.calibrate_pixel_size import parse_calibration_file
-from model_training.render_3d_flow import (
-    extract_slug_mesh_data,
-    reconstruct_3d_bubbles_si,
-)
+try:
+    from image_scripts.calibrate_pixel_size import parse_calibration_file
+    from visualization.render_3d_flow import extract_slug_mesh_data, reconstruct_3d_bubbles_si
+except ModuleNotFoundError:  # executed directly: put the repository root on sys.path
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from image_scripts.calibrate_pixel_size import parse_calibration_file
+    from visualization.render_3d_flow import extract_slug_mesh_data, reconstruct_3d_bubbles_si
 
 
 def format_frame_label(stem: str) -> str:
@@ -49,7 +52,7 @@ def format_frame_label(stem: str) -> str:
 def process_sequence_3d(
     mask_dir: Path,
     output_html_path: Path,
-    pixel_size_m: float = 5.936412e-05,
+    pixel_size_m: float | None = None,
     pipe_dia_m: float = 0.020,
     fps: float = 2000.0,
     start_frame: int = 0,
@@ -81,6 +84,12 @@ def process_sequence_3d(
                     ) / 2.0
                 elif "image_height_px" in calib_dict:
                     y_center_px = float(calib_dict["image_height_px"]) / 2.0
+
+    if pixel_size_m is None:
+        raise ValueError(
+            "pixel_size_m is required: pass it explicitly or give a calib_file that defines "
+            "pixel_size_m (no default exists)"
+        )
 
     mask_files = sorted(list(mask_dir.glob("*.png")) + list(mask_dir.glob("*.tif*")))
     if not mask_files:
@@ -908,8 +917,9 @@ def main():
     parser.add_argument(
         "--pixel-size",
         type=float,
-        default=5.936412e-05,
-        help="Optical pixel scale in meters/pixel (SI, default: 5.936412e-05)",
+        default=None,
+        help="Optical pixel scale in m/px. Required unless --calib-file is given or a "
+        "0_*calibration.txt sits next to the masks",
     )
     parser.add_argument(
         "--diameter",
@@ -970,10 +980,17 @@ def main():
 
     args = parser.parse_args()
 
+    # No default optical scale: --pixel-size, then --calib-file, then a file next to the masks.
+    pixel_size_m = args.pixel_size
+    if pixel_size_m is None and args.calib_file is None:
+        from image_scripts.calibrate_pixel_size import resolve_pixel_size
+
+        pixel_size_m = resolve_pixel_size(None, args.masks)
+
     process_sequence_3d(
         mask_dir=args.masks,
         output_html_path=args.output_html,
-        pixel_size_m=args.pixel_size,
+        pixel_size_m=pixel_size_m,
         pipe_dia_m=args.diameter,
         fps=args.fps,
         start_frame=args.start_frame,

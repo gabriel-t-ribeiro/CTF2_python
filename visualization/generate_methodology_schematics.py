@@ -7,7 +7,10 @@ Grounds:
   3. Single-camera Depth from Defocus (DFD) universal inversion curves and smoothstep near-wall regularization.
 """
 
+import argparse
+import importlib
 import os
+import sys
 
 os.environ["MPLCONFIGDIR"] = "/tmp/matplotlib"
 
@@ -34,8 +37,14 @@ plt.rcParams.update(
     }
 )
 
-OUTPUT_DIR = Path("ctf2_article/figures/schematics")
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+# Repository root on sys.path so the DFD model resolves when this file runs as a script.
+_PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
+DEFAULT_OUTPUT_DIR = Path("ctf2_article/figures/schematics")
+# Module-level so every generate_* function writes to the directory selected on the CLI.
+OUTPUT_DIR = DEFAULT_OUTPUT_DIR
 
 
 def generate_tube_chord_geometry():
@@ -575,9 +584,12 @@ def generate_dfd_curves_regularization():
     # ----------------------------------------------------
     # Subplot 1: Rao et al. Universal Curves f1 and f2
     # ----------------------------------------------------
-    sigma_tilde = np.linspace(0.005, 0.45, 300)
-    G_tilde = 0.35 / (sigma_tilde**0.85 + 0.01)
-    rho_tilde = 0.5 + 0.18 * sigma_tilde**0.65
+    # Exact f1 and f2 from the blurred-disc integral (Rao et al., 2024, Eqs. 7, 9, 10), taken
+    # from the same lookup table the DFD pipeline inverts.
+    dfd_model = importlib.import_module("model_training.6_depth_from_defocus").DFDModel()
+    sigma_tilde = np.linspace(dfd_model._sigmas[0], dfd_model._sigmas[-1], 300)
+    G_tilde = np.array([dfd_model.f2(s) for s in sigma_tilde])
+    rho_tilde = np.array([dfd_model.f1(s) for s in sigma_tilde])
 
     color_g = "#D9534F"
     color_r = "#0275D8"
@@ -604,9 +616,9 @@ def generate_dfd_curves_regularization():
         ls="--",
         label=r"$\tilde{\rho} = f_1(\tilde{\sigma})$",
     )
-    ax1_twin.set_ylabel(r"Inflection ratio $\tilde{\rho} = r_t / d_0$", color=color_r)
+    ax1_twin.set_ylabel(r"Threshold radius $\tilde{\rho}_t = r_t / d_0$", color=color_r)
     ax1_twin.tick_params(axis="y", labelcolor=color_r)
-    ax1_twin.set_ylim(0.45, 0.70)
+    ax1_twin.set_ylim(0.20, 0.52)
 
     # Highlight blind zone sigma < 0.05
     ax1.axvspan(0, 0.05, color="#F0AD4E", alpha=0.25)
@@ -1754,10 +1766,32 @@ def generate_dfd_dual_camera_single_cross_section():
     print(f"[DONE] Saved {pdf_path} and {png_path}")
 
 
+SCHEMATIC_GENERATORS = [
+    generate_tube_chord_geometry,
+    generate_tracking_breakup_schematic,
+    generate_dfd_curves_regularization,
+    generate_dfd_tube_saturation_cross_section,
+    generate_dfd_dual_camera_cross_section,
+    generate_dfd_dual_camera_single_cross_section,
+]
+
+
+def main(argv: list[str] | None = None) -> None:
+    global OUTPUT_DIR
+    parser = argparse.ArgumentParser(description="Generate the methodology schematics (PDF + PNG)")
+    parser.add_argument(
+        "--output-dir",
+        "-o",
+        type=Path,
+        default=DEFAULT_OUTPUT_DIR,
+        help="Directory for the generated schematics",
+    )
+    args = parser.parse_args(argv)
+    OUTPUT_DIR = args.output_dir
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    for generate in SCHEMATIC_GENERATORS:
+        generate()
+
+
 if __name__ == "__main__":
-    generate_tube_chord_geometry()
-    generate_tracking_breakup_schematic()
-    generate_dfd_curves_regularization()
-    generate_dfd_tube_saturation_cross_section()
-    generate_dfd_dual_camera_cross_section()
-    generate_dfd_dual_camera_single_cross_section()
+    main()

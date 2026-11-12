@@ -31,7 +31,7 @@ image_scripts/
 ├── 1_background_subtraction.py # Step 1: Remove static walls while protecting bubble glare & blur
 ├── 2_generate_masks.py         # Step 2: Extract binary masks using dynamic Otsu thresholding
 ├── 3_create_preannotations.py  # Step 3: Package vector polygons into Label Studio JSON
-├── test_single_mask.py         # Tool: Interactive preview on a single test frame
+├── preview_single_mask.py         # Tool: Interactive preview on a single test frame
 └── README.md
 ```
 
@@ -167,11 +167,11 @@ python image_scripts/3_create_preannotations.py \
 
 ---
 
-### Single-Frame Diagnostic Visualizer (`test_single_mask.py`)
+### Single-Frame Diagnostic Visualizer (`preview_single_mask.py`)
 Test and tune segmentation thresholds on a single frame before running batch operations:
 
 ```bash
-python image_scripts/test_single_mask.py \
+python image_scripts/preview_single_mask.py \
   --image results/bg_removed/frame_0016.png \
   --output results/test_diagnostic.png \
   --min-area 5 \

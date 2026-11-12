@@ -1,6 +1,6 @@
 # Deep Learning Segmentation, 3D Physics & Tracking (`model_training`)
 
-This directory houses the neural network segmentation pipeline, 3D volume reconstruction, high-speed kinematic bubble tracking (2000+ FPS), single-camera Depth from Defocus (DFD), and publication-ready timeline plotting.
+This directory holds the numbered pipeline stages: neural network segmentation, 3D volume reconstruction, high-speed kinematic bubble tracking (2000+ FPS) and single-camera Depth from Defocus (DFD). Renderers and plots live in [`../visualization/`](../visualization/README.md); evaluation and benchmark utilities live in [`../tools/`](../tools/README.md).
 
 ---
 
@@ -8,13 +8,21 @@ This directory houses the neural network segmentation pipeline, 3D volume recons
 
 | 3D Dual-Regime Bubble Flow | Physical Void Fraction Timeline |
 | :---: | :---: |
-| ![3D Flow Visualization](../0_docs/assets/3d_bubble_render.png) | ![Void Fraction Timeline](../0_docs/assets/void_fraction_timeline.png) |
+| ![3D Flow Visualization](../0_docs/assets/3d_bubble_render.png) | ![Void Fraction Timeline](../0_docs/assets/void_fraction_timeline_2791.png) |
 | *Watertight 3D reconstruction bounded by cylindrical tube walls* | *Physical time evolution with rolling mean & confidence bands* |
 
 | High-Speed Velocity Field Animation (2000 FPS) | U-Net Segmentation Architecture |
 | :---: | :---: |
 | ![High-Speed Bubble Velocity Animation](../0_docs/assets/bubble_velocity_animation.gif) | ![ResNet-34 U-Net](../0_docs/assets/resnet_unet_architecture.png) |
 | *Frame-by-frame velocity vectors with particle trails* | *Pretrained ResNet-34 encoder with matched skip connections* |
+
+---
+
+### Depth from Defocus versus the planar baseline
+
+![DFD versus planar baseline](../0_docs/assets/dfd_vs_nondfd_comparison.png)
+
+*Without DFD all small bubbles sit on the tube centre plane (b); with DFD each one gets its own depth (d). Orange: rejected, blur beyond $\tilde\sigma = 0.35$.*
 
 ---
 
@@ -48,20 +56,28 @@ This directory houses the neural network segmentation pipeline, 3D volume recons
 
 ```text
 model_training/
-├── 1_convert_annotations.py       # Step 1: Convert Label Studio JSON into training image/mask pairs
-├── 2_train_u_net.py               # Step 2: Train ResNet-34 U-Net segmentation model
-├── evaluate_unet_metrics.py       # Step 3: Compute validation metrics (IoU, Dice, MCC, Accuracy)
-├── 3_batch_inference.py           # Step 4: Run neural network inference across frame sequences
-├── 4_void_fraction_reconstruct.py # Step 5: Reconstruct 3D bubble volumes and void fraction CSV
-├── 5_track_bubbles_kinematics.py  # Step 6: 2000 FPS velocity tracking and breakup detection
-├── 6_depth_from_defocus.py        # Step 7: Single-camera DFD depth and bubble sizing analysis
-├── render_3d_flow.py              # Step 8: Publication 3D flow renders & WebGL HTML
-├── plot_void_fraction_timeline.py # Step 9: Publication timeline plots & interactive HTML
-├── render_3d_flow_animation.py    # Step 10: Multi-frame animated 3D WebGL player
-├── visualize_flow_animation.py    # Tool: Generate slow-motion MP4/GIF animations
-├── project_export.json            # Sample verified Label Studio ground-truth export
+├── 1_convert_annotations.py       # Stage 1: Label Studio JSON -> training image/mask pairs
+├── 2_train_u_net.py               # Stage 2: train the ResNet-34 U-Net
+├── 3_batch_inference.py           # Stage 3: batch inference across frame sequences
+├── 4_void_fraction_reconstruct.py # Stage 4: dual-regime 3D volumes and void fraction CSV
+├── 5_track_bubbles_kinematics.py  # Stage 5: velocity tracking and breakup detection
+├── 6_depth_from_defocus.py        # Stage 6: DFD sizing, depth and ground-truth evaluation
+├── project_export.json            # Sample Label Studio export (untracked)
 └── README.md
+
+visualization/                     # called by the stages above and by main.py
+├── render_3d_flow.py              # single-frame 3D render (PNG + WebGL HTML)
+├── render_3d_flow_animation.py    # multi-frame animated 3D WebGL player
+├── visualize_flow_animation.py    # slow-motion velocity-vector MP4/GIF/HTML
+└── plot_void_fraction_timeline.py # timeline figures and interactive dashboard
+
+tools/
+├── evaluate_unet_metrics.py       # validation metrics (IoU, Dice, MCC, accuracy)
+├── benchmark_inference_speed.py   # forward-pass and end-to-end timing
+└── create_dataset_2_from_divergente.py
 ```
+
+Every script runs on its own (`python model_training/<script>.py --help`) or through the unified CLI (`python main.py <command>`).
 
 ---
 
@@ -156,11 +172,11 @@ python model_training/2_train_u_net.py \
 
 ---
 
-### Step 3: Evaluate Model Performance (`evaluate_unet_metrics.py`)
+### Step 3: Evaluate Model Performance (`tools/evaluate_unet_metrics.py`)
 Evaluates segmentation accuracy on the validation split:
 
 ```bash
-python model_training/evaluate_unet_metrics.py \
+python tools/evaluate_unet_metrics.py \
   --model models/run_1_unet.pth \
   --dataset dataset \
   --output-csv results/model_validation_metrics.csv
@@ -234,20 +250,65 @@ python main.py animate-flow \
 ---
 
 ### Step 7: Single-Camera Depth from Defocus (`6_depth_from_defocus.py`)
-Measures out-of-plane physical depth ($z$) and in-focus diameter ($d_0$) using boundary edge blur:
+
+Measures the in-focus diameter $d_0$ and the out-of-plane depth $z$ of each bubble from the blur of its boundary, following Rao, Sharma, Basu & Tropea (2024), *Experiments in Fluids* 65:55. This single module now also contains the ground-truth evaluation workflow that used to live in `test_dfd_ground_truth.py`.
+
+**Method (equation numbers from the article)**
+
+| Step | Relation | Notes |
+| :--- | :--- | :--- |
+| Blur vs. depth (Eq. 5) | $\sigma = \beta\,\lvert\Delta z\rvert$ | $\beta$ in px/m, $\Delta z$ from the object plane |
+| Scaling (Eq. 6) | $\tilde\rho_t = r_t/d_0,\ \tilde\sigma = \sigma/d_0$ | $r_t=\sqrt{A/\pi}$ at the reference intensity $g_t = 0.5$ |
+| Gradient (Eq. 9) | $\tilde G = r_t\,\lvert\partial g_t/\partial r_t\rvert = f_2(\tilde\sigma)$ | dimensionless, measured on the image |
+| Radius (Eq. 10) | $\tilde\rho_t = f_1(\tilde\sigma)$ | from the blurred-disc integral (Eq. 7) |
+| Size | $\tilde\sigma = f_2^{-1}(\tilde G),\quad d_0 = r_t / f_1(\tilde\sigma)$ | calibration-free |
+| Depth | $\lvert\Delta z\rvert = \tilde\sigma\, d_0 / \beta$ | needs the optical constant $\beta$ |
+
+**Validity limits.** Results with $\tilde\sigma > 0.35$ are rejected (`unreliable_defocus`), as in the article ($\tilde\rho_t = 0.3211$, $\tilde G = 0.2501$ at the limit — both reproduced by the lookup table and checked in the tests). For $\tilde\sigma < 0.05$ depth is unreliable, so a smoothstep regulariser (a project addition) blends towards the in-focus limit. Slugs and non-circular bodies are excluded and handled by the EDT reconstruction; depth is confined to the tube chord $L_{chord}(y)$.
+
+**Three input modes**
 
 ```bash
+# A. Raw frames + masks (U-Net output or ground truth)
 python main.py dfd \
-  --images results/cropped_frames \
-  --masks results/segmented_masks \
-  -o results/dfd_results.csv \
-  --pixel-size 6.1e-5 \
-  --beta-eff 2000.0
+  --images dataset/images \
+  --masks dataset/masks \
+  -o results/dfd_run \
+  --beta-eff 2000.0 \
+  --render-diagnostic
+
+# B. Label Studio export (brush, polygon, ellipse and rectangle labels)
+python model_training/6_depth_from_defocus.py \
+  --json dataset_2_no_background/project-2-at-2026-09-23-14-12-2182585c.json \
+  --pixel-size 5.175358e-05 --pipe-center-y 194.2 \
+  -o results/dfd_groundtruth
+
+# C. Sample frames for annotation
+python model_training/6_depth_from_defocus.py --prepare-tasks \
+  --images dataset/images --sample-count 10 --sample-output sample_dfd_tasks
 ```
+
+| Flag | Meaning |
+| :--- | :--- |
+| `--pixel-size` | Optical scale in m/px. Mandatory unless a `0_*calibration.txt` matching the frame size is found near the inputs; there is no default |
+| `--diameter`, `--pipe-center-y` | Override the values read from the calibration file |
+| `--beta-eff` | Defocus constant $\beta$ in px/m (default 2000, not yet calibrated in situ) |
+| `--wall-thickness` | Glass wall thickness in m (default 0.003) |
+| `--focal-plane-z` | Optional alternative: absolute $z$ of a planar object plane in m. The default, and the convention of the experimental setup, anchors the focus at the local front fluid boundary |
+| `--render-diagnostic`, `--render-3d`, `--show-labels` | 2-panel figure; 3D spatial + volumetric + WebGL viewer; per-bubble labels |
+| `--max-diagnostic-frames`, `--no-diagnostics` | Limit or disable figures |
+
+Outputs: `dfd_results.csv` (one row per entity with `diameter_d0_m`, `depth_fluid_z_m`, `sigma_tilde`, `dfd_status`, …), `diagnostics/`, and with `--json` also `extracted_data/` and `dfd_3d_interactive.html`.
+
+The bundled `dataset/` and `dataset_2*` frames are in-focus acquisitions: commands A–C run on them, but depth is only meaningful on footage recorded with the DFD optical setup, as in the frame below.
+
+![DFD diagnostic](../0_docs/assets/dfd_diagnostic_frame_0071.png)
+
+*DFD acquisition, frame 0071 (4.36e-5 m/px): 45 valid bubbles, 18 rejected for blur beyond $\tilde\sigma = 0.35$, 4 slugs.*
 
 ---
 
-### Step 8: Publication 3D Flow Visualization (`render_3d_flow.py`)
+### Step 8: Publication 3D Flow Visualization (`visualization/render_3d_flow.py`)
 Renders full 3D flow structures inside a cylindrical tube to high-resolution PNG and interactive WebGL HTML:
 
 ```bash
@@ -261,7 +322,7 @@ python main.py render \
 
 ---
 
-### Step 9: Void Fraction Timeline Dashboards (`plot_void_fraction_timeline.py`)
+### Step 9: Void Fraction Timeline Dashboards (`visualization/plot_void_fraction_timeline.py`)
 Produces publication figures (PNG, SVG, PDF) and zero-dependency interactive Chart.js HTML dashboards:
 
 ```bash
@@ -282,7 +343,7 @@ Key features:
 
 ---
 
-### Step 10: Interactive 3D Flow Animation Player (`render_3d_flow_animation.py`)
+### Step 10: Interactive 3D Flow Animation Player (`visualization/render_3d_flow_animation.py`)
 Reconstructs dynamic, multi-frame 3D flow animations across high-speed sequences into a standalone, zero-dependency HTML WebGL player:
 
 ```bash

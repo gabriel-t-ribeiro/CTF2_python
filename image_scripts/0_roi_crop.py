@@ -24,6 +24,9 @@ from matplotlib.patches import Rectangle
 
 VALID_EXTS = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp"}
 base_workspace = Path(__file__).resolve().parents[1]
+# Repository root on sys.path so `image_scripts.*` resolves when this file runs as a script.
+if str(base_workspace) not in sys.path:
+    sys.path.insert(0, str(base_workspace))
 photo_path = base_workspace / "images" / "1st_run" / "images_1" / "raw_1"
 result_path = base_workspace / "images" / "1st_run" / "images_2"
 

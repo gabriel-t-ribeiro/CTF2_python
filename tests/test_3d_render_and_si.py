@@ -44,7 +44,7 @@ repo_root = Path(__file__).resolve().parents[1]
 if str(repo_root) not in sys.path:
     sys.path.insert(0, str(repo_root))
 
-from model_training.render_3d_flow import (
+from visualization.render_3d_flow import (
     reconstruct_3d_bubbles_si,
     render_3d_flow_visualization,
     render_interactive_html,
@@ -290,11 +290,82 @@ def test_depth_from_defocus_near_wall_regularization():
     assert len(results) == 1
     res = results[0]
     assert res["near_wall_zone"] is True
-    # Depth must be near front wall (sub-millimeter)
-    assert res["depth_z_m"] < 1e-4
+    # Fluid depth (measured from the front inner wall) must be sub-millimetre: a pixelated
+    # step edge still carries about 1 px of apparent blur, i.e. ~0.5 mm at beta = 2000 px/m
+    assert res["depth_fluid_z_m"] < 1e-3
+    # Absolute depth = glass wall offset + front-wall position at this elevation + fluid depth
+    z_front_m = res["z_rear_wall_m"] - res["l_chord_m"]
+    assert abs(res["depth_z_m"] - (z_front_m + res["depth_fluid_z_m"])) < 1e-12
     # Diameter must accurately reflect the 30 px circle (30 * 1e-4 = 3e-3 m) within 5%
     expected_d0 = 30.0 * 1e-4
     assert abs(res["diameter_d0_m"] - expected_d0) / expected_d0 < 0.05
+
+
+def test_depth_from_defocus_matches_rao_2024_reference_values():
+    """f1 and f2 must reproduce the limits published by Rao et al. (2024), Sect. 2.3 / Eq. 13."""
+    model = DFDModel()
+
+    # At the critical blur sigma~_c = 0.35 the article gives rho~_t = 0.3211 and G~ = 0.2501
+    assert abs(model.f1(mod_dfd.SIGMA_TILDE_CRITICAL) - 0.3211) < 5e-4
+    assert abs(model.f2(mod_dfd.SIGMA_TILDE_CRITICAL) - 0.2501) < 5e-4
+    # In the near-focus field (sigma~ < 0.05) rho~_t is practically constant at 0.5
+    assert abs(model.f1(mod_dfd.SIGMA_TILDE_NEAR_FOCUS) - 0.5) < 5e-3
+    # Round trip sigma~ -> G~ -> sigma~
+    for sigma_tilde in (0.06, 0.15, 0.25, 0.34):
+        s_back, rho_back = model.invert(model.f2(sigma_tilde))
+        assert abs(s_back - sigma_tilde) < 2e-3
+        assert abs(rho_back - model.f1(sigma_tilde)) < 2e-3
+
+
+def test_depth_from_defocus_out_of_range_gradients():
+    """Gradients outside the table must map to the matching end of the blur range."""
+    model = DFDModel()
+
+    # Weaker gradient than f2(0.35): beyond the critical blur, never "in focus"
+    s_blurred, _ = model.invert(0.05)
+    assert s_blurred > mod_dfd.SIGMA_TILDE_CRITICAL
+    # Steeper gradient than the sharpest table entry: in focus
+    s_sharp, rho_sharp = model.invert(1e3)
+    assert s_sharp < mod_dfd.SIGMA_TILDE_NEAR_FOCUS
+    assert abs(rho_sharp - 0.5) < 1e-3
+
+
+def test_depth_from_defocus_flags_blur_beyond_critical_limit():
+    """A heavily blurred bubble must be rejected as unreliable (sigma~ > 0.35), not kept."""
+    model = DFDModel()
+    h, w = 120, 120
+    raw = np.full((h, w), 200, dtype=np.uint8)
+    cv2.circle(raw, (60, 60), 6, 60, -1)
+    raw = cv2.GaussianBlur(raw, (0, 0), sigmaX=7.0)
+    mask = np.zeros((h, w), dtype=np.uint8)
+    cv2.circle(mask, (60, 60), 6, 255, -1)
+
+    results = analyze_frame_dfd(raw, mask, model, pixel_size_m=1e-4, beta_eff_px_m=2000.0)
+    assert len(results) == 1
+    res = results[0]
+    assert res["sigma_tilde"] > mod_dfd.SIGMA_TILDE_CRITICAL
+    assert res["is_reliable_dfd"] is False
+    assert res["dfd_status"] in {"unreliable_defocus", "saturated_rear_wall"}
+
+
+def test_depth_from_defocus_planar_focal_plane():
+    """With a planar object plane the bubble sits at z = z_focus + sigma / beta (Rao Eq. 5)."""
+    model = DFDModel()
+    h, w = 100, 100
+    raw = np.full((h, w), 200, dtype=np.uint8)
+    cv2.circle(raw, (50, 50), 12, 60, -1)
+    raw = cv2.GaussianBlur(raw, (0, 0), sigmaX=2.5)
+    mask = np.zeros((h, w), dtype=np.uint8)
+    cv2.circle(mask, (50, 50), 12, 255, -1)
+
+    common = {"pixel_size_m": 1e-4, "beta_eff_px_m": 2000.0, "wall_thickness_m": 0.003}
+    local = analyze_frame_dfd(raw, mask, model, **common)[0]
+    z_focus = 0.004
+    planar = analyze_frame_dfd(raw, mask, model, focal_plane_z_m=z_focus, **common)[0]
+
+    delta_z_m = local["blur_sigma_px"] / 2000.0
+    assert abs(local["depth_fluid_z_m"] - delta_z_m) < 1e-12
+    assert abs(planar["depth_z_m"] - (z_focus + delta_z_m)) < 1e-12
 
 
 if __name__ == "__main__":
@@ -317,4 +388,12 @@ if __name__ == "__main__":
     print("  [PASS] test_depth_from_defocus_inversion")
     test_depth_from_defocus_near_wall_regularization()
     print("  [PASS] test_depth_from_defocus_near_wall_regularization")
-    print("\nALL 9 TESTS PASSED SUCCESSFULLY!")
+    test_depth_from_defocus_matches_rao_2024_reference_values()
+    print("  [PASS] test_depth_from_defocus_matches_rao_2024_reference_values")
+    test_depth_from_defocus_out_of_range_gradients()
+    print("  [PASS] test_depth_from_defocus_out_of_range_gradients")
+    test_depth_from_defocus_flags_blur_beyond_critical_limit()
+    print("  [PASS] test_depth_from_defocus_flags_blur_beyond_critical_limit")
+    test_depth_from_defocus_planar_focal_plane()
+    print("  [PASS] test_depth_from_defocus_planar_focal_plane")
+    print("\nALL 13 TESTS PASSED SUCCESSFULLY!")

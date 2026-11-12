@@ -19,7 +19,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from model_training.visualize_flow_animation import (
+from visualization.visualize_flow_animation import (
     compute_boundary_vectors,
     extract_bubble_blobs,
     get_colormap_color,

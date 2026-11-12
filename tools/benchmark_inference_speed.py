@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+import argparse
+import shutil
+import tempfile
 import time
 from pathlib import Path
 
@@ -64,7 +67,9 @@ class MatlabUnetEquivalent(nn.Module):
         return self.final(d1)
 
 
-def benchmark_forward_pass():
+def benchmark_forward_pass(
+    batch_sizes: tuple[int, ...] = (1, 4, 8, 16), n_warmup: int = 5, n_runs: int = 20
+) -> list[dict]:
     device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
     print("\n=======================================================")
     print(f"  BENCHMARK 1: PURE NEURAL NETWORK FORWARD PASS ({device})")
@@ -79,10 +84,6 @@ def benchmark_forward_pass():
     python_model = smp.Unet(encoder_name="resnet34", in_channels=1, classes=1).to(device).eval()
     python_params = sum(p.numel() for p in python_model.parameters())
     print(f"Python ResNet-34 U-Net: {python_params:,} parameters (Input: 512x512)")
-
-    batch_sizes = [1, 4, 8, 16]
-    n_warmup = 5
-    n_runs = 20
 
     results = []
 
@@ -140,35 +141,40 @@ def benchmark_forward_pass():
     return results
 
 
-def benchmark_end_to_end():
+def benchmark_end_to_end(
+    input_dir: Path | None = None,
+    model_path: Path = Path("models/run_2_unet.pth"),
+    max_frames: int = 50,
+    batch_sizes: tuple[int, ...] = (1, 16),
+) -> list[dict]:
     device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
     print("\n=======================================================")
     print("  BENCHMARK 2: END-TO-END BATCH INFERENCE PIPELINE")
     print("  (Disk Read -> Resize -> Forward -> Threshold -> Save)")
     print("=======================================================")
 
-    # Select 50 test frames
-    input_dir = Path("images/background1/background_removed")
-    if not input_dir.exists():
-        input_dir = Path("dataset_2/images")
+    if input_dir is None:
+        input_dir = Path("images/background1/background_removed")
+        if not input_dir.exists():
+            input_dir = Path("dataset_2/images")
 
-    test_files = sorted(list(input_dir.glob("*.png")) + list(input_dir.glob("*.tif")))[:50]
+    test_files = sorted(list(input_dir.glob("*.png")) + list(input_dir.glob("*.tif")))[:max_frames]
     num_files = len(test_files)
+    if num_files == 0:
+        raise FileNotFoundError(f"No .png or .tif frames found in: {input_dir}")
     print(f"Benchmarking on {num_files} actual flow frames from {input_dir}...")
 
     # Load Python model
-    model_path = Path("models/run_2_unet.pth")
     model = smp.Unet(encoder_name="resnet34", encoder_weights=None, in_channels=1, classes=1)
     if model_path.exists():
         model.load_state_dict(torch.load(model_path, map_location=device))
     model.to(device).eval()
 
-    output_dir = Path("scratch/benchmark_temp_out")
-    output_dir.mkdir(parents=True, exist_ok=True)
+    output_dir = Path(tempfile.mkdtemp(prefix="ctf2_benchmark_"))
 
     e2e_results = []
 
-    for bs in [1, 16]:
+    for bs in batch_sizes:
         t_read_resize = 0.0
         t_model = 0.0
         t_post_save = 0.0
@@ -235,23 +241,46 @@ def benchmark_end_to_end():
             }
         )
 
-    # Clean up temp
-    import shutil
-
     shutil.rmtree(output_dir)
 
     return e2e_results
 
 
-if __name__ == "__main__":
-    fwd_res = benchmark_forward_pass()
-    e2e_res = benchmark_end_to_end()
-
-    df_fwd = pd.DataFrame(fwd_res)
-    df_e2e = pd.DataFrame(e2e_res)
-
-    df_fwd.to_csv("models/benchmark_forward_pass.csv", index=False)
-    df_e2e.to_csv("models/benchmark_end_to_end.csv", index=False)
-    print(
-        "\nBenchmark results saved to models/benchmark_forward_pass.csv and models/benchmark_end_to_end.csv"
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(
+        description="Benchmark U-Net forward-pass and end-to-end inference speed",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
+    parser.add_argument(
+        "--input",
+        "-i",
+        type=Path,
+        default=None,
+        help="Frames for the end-to-end benchmark (default: background-removed run, else dataset_2)",
+    )
+    parser.add_argument("--model", "-m", type=Path, default=Path("models/run_2_unet.pth"))
+    parser.add_argument("--output-dir", "-o", type=Path, default=Path("models"))
+    parser.add_argument("--max-frames", type=int, default=50, help="Frames in the end-to-end run")
+    parser.add_argument("--runs", type=int, default=20, help="Timed forward passes per batch size")
+    parser.add_argument(
+        "--quick", action="store_true", help="Smoke run: batch size 1 only, 2 timed passes"
+    )
+    args = parser.parse_args(argv)
+
+    if args.quick:
+        fwd_res = benchmark_forward_pass(batch_sizes=(1,), n_warmup=1, n_runs=2)
+        e2e_res = benchmark_end_to_end(args.input, args.model, args.max_frames, batch_sizes=(1,))
+    else:
+        fwd_res = benchmark_forward_pass(n_runs=args.runs)
+        e2e_res = benchmark_end_to_end(args.input, args.model, args.max_frames)
+
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+    fwd_csv = args.output_dir / "benchmark_forward_pass.csv"
+    e2e_csv = args.output_dir / "benchmark_end_to_end.csv"
+    pd.DataFrame(fwd_res).to_csv(fwd_csv, index=False)
+    pd.DataFrame(e2e_res).to_csv(e2e_csv, index=False)
+    print(f"\nBenchmark results saved to {fwd_csv} and {e2e_csv}")
+
+
+if __name__ == "__main__":
+    main()

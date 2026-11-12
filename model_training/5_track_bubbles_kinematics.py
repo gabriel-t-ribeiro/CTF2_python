@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -9,8 +10,13 @@ import pandas as pd
 from scipy.optimize import linear_sum_assignment
 from scipy.spatial.distance import cdist
 
+# Repository root on sys.path so `visualization.*` resolves when this file runs as a script.
+_PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
 
-def extract_bubble_blobs(mask_2d: np.ndarray, pixel_size_m: float = 6.7e-5) -> list[dict[str, Any]]:
+
+def extract_bubble_blobs(mask_2d: np.ndarray, pixel_size_m: float) -> list[dict[str, Any]]:
     """
     Identifies 8-connected bubble components and extracts their spatial properties
     in both image pixel coordinates and standard SI units (meters, square meters):
@@ -270,7 +276,7 @@ def run_tracking(
     print(f"[DONE] Saved breakup logs (SI) to : {breakup_path}")
 
     if render_animation:
-        from model_training.visualize_flow_animation import render_flow_animation
+        from visualization.visualize_flow_animation import render_flow_animation
 
         anim_out = output_dir / "animation"
         print(f"\n[ANIMATION] Generating flow animation & velocity fields in: {anim_out}")
@@ -315,8 +321,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--pixel-size",
         type=float,
-        default=8.6e-5,
-        help="Pixel size in meters/pixel (SI, default 8.6e-5 m/px = 0.086 mm/px)",
+        default=None,
+        help="Pixel size in m/px. Required unless a 0_*calibration.txt sits next to the masks/images",
     )
     parser.add_argument(
         "--v-max",
@@ -349,11 +355,14 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
+    # No default optical scale: take it from --pixel-size or from a calibration file.
+    from image_scripts.calibrate_pixel_size import resolve_pixel_size
+
     run_tracking(
         mask_dir=args.masks,
         output_dir=args.output_dir,
         fps=args.fps,
-        pixel_size=args.pixel_size,
+        pixel_size=resolve_pixel_size(args.pixel_size, args.masks, args.images),
         max_disp_px=args.max_disp,
         v_max=args.v_max,
         image_dir=args.images,

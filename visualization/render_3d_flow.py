@@ -14,6 +14,7 @@ and renders publication-grade 3D visualizations matching the reference specifica
 """
 
 import argparse
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -29,7 +30,7 @@ from scipy.ndimage import distance_transform_edt
 
 def reconstruct_3d_bubbles_si(
     mask_2d: np.ndarray,
-    pixel_size_m: float = 6.1e-5,
+    pixel_size_m: float,
     pipe_dia_m: float = 0.020,
     area_thresh_px: float = 5000.0,
     smoothing_lambda_px: float = 0.15,
@@ -41,7 +42,7 @@ def reconstruct_3d_bubbles_si(
 
     Parameters:
         mask_2d: Binary mask array (H, W) where >0 is gas and 0 is liquid.
-        pixel_size_m: Optical scale in meters/pixel (default: 6.1e-5 m/px = 0.061 mm/px).
+        pixel_size_m: Optical scale in meters/pixel (required; there is no default).
         pipe_dia_m: Channel internal diameter in meters (default: 0.020 m = 20.0 mm).
         area_thresh_px: Threshold area in pixels distinguishing small vs large bubbles (default 5000 px).
         smoothing_lambda_px: Laplacian boundary smoothing factor (default 0.15).
@@ -741,13 +742,14 @@ def main():
         "--pixel-size",
         type=float,
         default=None,
-        help="Optical pixel scale in meters/pixel (SI unit, e.g. 6.1e-5)",
+        help="Optical pixel scale in m/px. Required (or --pixel-size-mm) unless a "
+        "0_*calibration.txt sits next to the mask",
     )
     parser.add_argument(
         "--pixel-size-mm",
         type=float,
-        default=0.061,
-        help="Optical pixel scale in mm/pixel (convenience, default 0.061 mm)",
+        default=None,
+        help="Optical pixel scale in mm/pixel (convenience alternative to --pixel-size)",
     )
     parser.add_argument(
         "--diameter",
@@ -778,7 +780,15 @@ def main():
     args = parser.parse_args()
 
     # Determine SI values strictly
-    pixel_size_m = args.pixel_size if args.pixel_size is not None else args.pixel_size_mm * 1e-3
+    # No default optical scale: take it from --pixel-size or from a calibration file.
+    if str(Path(__file__).resolve().parents[1]) not in sys.path:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from image_scripts.calibrate_pixel_size import resolve_pixel_size
+
+    explicit_m = args.pixel_size
+    if explicit_m is None and args.pixel_size_mm is not None:
+        explicit_m = args.pixel_size_mm * 1e-3
+    pixel_size_m = resolve_pixel_size(explicit_m, args.mask)
     dia_m = args.diameter if args.diameter is not None else args.diameter_mm * 1e-3
 
     mask = cv2.imread(str(args.mask), cv2.IMREAD_GRAYSCALE)

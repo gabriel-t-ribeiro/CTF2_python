@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import sys
 from pathlib import Path
 
 import cv2
@@ -8,15 +9,13 @@ import pandas as pd
 from scipy.ndimage import distance_transform_edt
 
 try:
-    from model_training.render_3d_flow import (
+    from visualization.render_3d_flow import (
         reconstruct_3d_bubbles_si,
         render_3d_flow_visualization,
     )
-except ImportError:
-    import sys
-
-    sys.path.append(str(Path(__file__).resolve().parent.parent))
-    from model_training.render_3d_flow import (
+except ModuleNotFoundError:  # executed directly: put the repository root on sys.path
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from visualization.render_3d_flow import (
         reconstruct_3d_bubbles_si,
         render_3d_flow_visualization,
     )
@@ -310,10 +309,7 @@ def run_reconstruction(
 
     # If timeline plot is requested, generate publication plot and HTML dashboard
     if plot_timeline:
-        try:
-            from model_training.plot_void_fraction_timeline import run_timeline_pipeline
-        except ImportError:
-            from plot_void_fraction_timeline import run_timeline_pipeline
+        from visualization.plot_void_fraction_timeline import run_timeline_pipeline
 
         timeline_plot_path = output_csv.parent / f"{output_csv.stem}_timeline.png"
         timeline_html_path = output_csv.parent / f"{output_csv.stem}_timeline.html"
@@ -352,8 +348,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--pixel-size",
         type=float,
-        default=8.6e-5,
-        help="Pixel size in meters/pixel (SI, default: 8.6e-5 m/px = 0.086 mm/px) or mm/pixel",
+        default=None,
+        help="Pixel size in m/px (or mm/px). Required unless a 0_*calibration.txt sits next to the masks",
     )
     parser.add_argument(
         "--diameter",
@@ -411,10 +407,15 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
+    # No default optical scale: take it from --pixel-size or from a calibration file.
+    if str(Path(__file__).resolve().parents[1]) not in sys.path:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from image_scripts.calibrate_pixel_size import resolve_pixel_size
+
     run_reconstruction(
         args.masks,
         args.output_csv,
-        args.pixel_size,
+        resolve_pixel_size(args.pixel_size, args.masks),
         args.diameter,
         args.vapor_quality,
         args.mass_flux,

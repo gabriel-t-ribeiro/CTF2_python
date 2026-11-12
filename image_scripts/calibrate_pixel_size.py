@@ -556,6 +556,43 @@ def find_and_load_calibration(search_path: Path) -> dict[str, Any] | None:
     return None
 
 
+def resolve_pixel_size(explicit: float | None, *search_paths: Path | None) -> float:
+    """
+    Return the optical scale in m/px, from the explicit value or from a calibration file.
+
+    There is deliberately no fallback value: every acquisition has its own optical scale, so a
+    silent default would produce wrong lengths, volumes and velocities. Order of resolution:
+      1. `explicit` (the --pixel-size argument), if given
+      2. the first `0_*calibration.txt` found next to one of `search_paths`
+    Exits with an explanatory message when neither is available.
+    """
+    if explicit is not None:
+        if explicit <= 0:
+            raise SystemExit(f"[ERROR] Pixel size must be positive, got {explicit}")
+        return float(explicit)
+
+    for path in search_paths:
+        if path is None:
+            continue
+        cal = find_and_load_calibration(Path(path))
+        if cal and "pixel_size_m" in cal:
+            pixel_size_m = float(cal["pixel_size_m"])
+            source = cal.get("_file_path", "calibration file")
+            print(
+                f"[CALIBRATION] Auto-loaded optical scale from {source}: "
+                f"{pixel_size_m:.6e} m/px ({pixel_size_m * 1e3:.4f} mm/px)"
+            )
+            return pixel_size_m
+
+    searched = ", ".join(str(p) for p in search_paths if p is not None) or "(no path)"
+    raise SystemExit(
+        "[ERROR] No optical calibration available. There is no default pixel size.\n"
+        f"        Searched for a 0_*calibration.txt near: {searched}\n"
+        "        Either pass --pixel-size <m/px>, or create the calibration file with:\n"
+        "          python main.py calibrate -i <image_folder> --size-mm <known_length_mm>"
+    )
+
+
 def run_calibration(
     input_path: Path,
     size_mm: float | None = None,

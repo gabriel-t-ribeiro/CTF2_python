@@ -59,7 +59,7 @@ ignore = [
 "tests/*" = ["E402"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["image_scripts", "model_training"]
+known-first-party = ["image_scripts", "model_training", "visualization", "tools"]
 
 [tool.ruff.format]
 quote-style = "double"

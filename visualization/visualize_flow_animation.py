@@ -20,6 +20,7 @@ import argparse
 import base64
 import csv
 import re
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -46,7 +47,7 @@ def format_short_frame_name(stem: str) -> str:
 
 
 def extract_bubble_blobs(
-    mask_2d: np.ndarray, pixel_size_m: float = 6.1162e-5, min_area_px: int = 15
+    mask_2d: np.ndarray, pixel_size_m: float, min_area_px: int = 15
 ) -> list[dict[str, Any]]:
     """
     Extract 8-connected bubble components, contours, and physical metrics.
@@ -338,7 +339,7 @@ def render_flow_animation(
     mask_dir: Path,
     output_dir: Path,
     fps: float = 2000.0,
-    pixel_size_m: float = 6.1162e-5,
+    pixel_size_m: float | None = None,
     max_disp_px: float = 50.0,
     vector_step_px: float = 12.0,
     playback_fps: float = 5.0,
@@ -362,6 +363,10 @@ def render_flow_animation(
       6. Renders annotated slow-motion video and generates a lightweight interactive HTML player.
       7. Writes detailed SI vector records to CSV.
     """
+    if pixel_size_m is None:
+        raise ValueError(
+            "pixel_size_m is required: pass the calibrated optical scale in m/px (no default exists)"
+        )
     output_dir.mkdir(parents=True, exist_ok=True)
     frames_dir = output_dir / "frames"
 
@@ -1312,8 +1317,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--pixel-size",
         type=float,
-        default=6.1162e-5,
-        help="Optical scale in meters/pixel (SI, default: 6.1162e-5)",
+        default=None,
+        help="Optical scale in m/px. Required unless a 0_*calibration.txt sits next to the masks/images",
     )
     parser.add_argument(
         "--stride",
@@ -1386,12 +1391,17 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
+    # No default optical scale: take it from --pixel-size or from a calibration file.
+    if str(Path(__file__).resolve().parents[1]) not in sys.path:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from image_scripts.calibrate_pixel_size import resolve_pixel_size
+
     render_flow_animation(
         image_dir=args.images,
         mask_dir=args.masks,
         output_dir=args.output_dir,
         fps=args.fps,
-        pixel_size_m=args.pixel_size,
+        pixel_size_m=resolve_pixel_size(args.pixel_size, args.masks, args.images),
         stride=args.stride,
         playback_fps=args.playback_fps,
         max_duration_s=args.max_duration,

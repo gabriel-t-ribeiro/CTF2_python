@@ -20,7 +20,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from model_training.plot_void_fraction_timeline import (
+from visualization.plot_void_fraction_timeline import (
     calculate_rouhani_axelsson,
     compute_rolling_mean,
     detect_columns,
